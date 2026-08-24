@@ -66,6 +66,7 @@ public:
         string mPayload;
         string mAppId;
         std::chrono::steady_clock::time_point mSubmitTime;
+        WPEFramework::Plugin::AppGatewayTelemetryHelper::TelemetryClient* mTelemetryClient;
     };
 
     BaseEventDelegate() : mRegisteredNotifications(),

@@ -954,9 +954,17 @@ namespace AppGatewayTelemetryHelper {
  *   private:
  *     ...existing members...
  *     std::chrono::steady_clock::time_point mSubmitTime;  // ← add this
+ *     WPEFramework::Plugin::AppGatewayTelemetryHelper::TelemetryClient* mTelemetryClient;  // ← add this
+ *
+ * Why capture the client pointer here?
+ * The constructor is always called from a .cpp file that has
+ * AGW_DEFINE_TELEMETRY_CLIENT in scope, so GetLocalTelemetryClient() is
+ * reachable. Dispatch() may be defined inline in a header included by
+ * multiple .cpp files, where GetLocalTelemetryClient() would be out of scope.
  */
 #define AGW_JOB_CAPTURE_SUBMIT_TIME() \
-    mSubmitTime(std::chrono::steady_clock::now())
+    mSubmitTime(std::chrono::steady_clock::now()),   \
+    mTelemetryClient(&GetLocalTelemetryClient())
 
 /**
  * @brief T2 + T3: Report all three timing values via RAII.
@@ -986,7 +994,7 @@ namespace AppGatewayTelemetryHelper {
  */
 #define AGW_TRACK_JOB_LATENCY(varName, jobName, correlationId)                         \
     WPEFramework::Plugin::AppGatewayTelemetryHelper::ScopedJobTimer varName(           \
-        &GetLocalTelemetryClient(), jobName, correlationId, mSubmitTime)
+        mTelemetryClient, jobName, correlationId, mSubmitTime)
 
 //=============================================================================
 // 8. GENERIC TELEMETRY REPORTING MACROS (Low-level Interface)
