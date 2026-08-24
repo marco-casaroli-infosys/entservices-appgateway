@@ -541,6 +541,78 @@ namespace AppGatewayTelemetryHelper {
         std::chrono::steady_clock::time_point mStartTime;
     };
 
+    /**
+     * @brief RAII timer that captures and reports all three job timing timestamps.
+     *
+     * Construct at the TOP of Dispatch() — the submit time was already captured
+     * in the job's constructor and passed in here. The destructor fires at the
+     * end of Dispatch(), recording queue-wait, execution, and total durations.
+     *
+     * @param client        Telemetry client (from GetLocalTelemetryClient())
+     * @param jobName       Job class name — label only, e.g. "WsMsgJob"
+     * @param correlationId Any identity string from the job's own fields
+     *                      (e.g. requestId, appId, method) — label only
+     * @param submitTime    mSubmitTime captured in the job's constructor (T1)
+     *
+     * @note Used exclusively via the AGW_TRACK_JOB_LATENCY macro.
+     */
+    class ScopedJobTimer
+    {
+    public:
+        ScopedJobTimer(TelemetryClient* client,
+                       const std::string& jobName,
+                       const std::string& correlationId,
+                       const std::chrono::steady_clock::time_point& submitTime)
+            : mClient(client)
+            , mJobName(jobName)           // payload label only
+            , mCorrelationId(correlationId) // payload label only
+            , mSubmitTime(submitTime)
+            , mDispatchStartTime(std::chrono::steady_clock::now())  // T2
+        {
+        }
+
+        ~ScopedJobTimer()  // fires at end of Dispatch() scope → T3
+        {
+            if (nullptr == mClient || !mClient->IsAvailable()) {
+                return;
+            }
+
+            auto endTime = std::chrono::steady_clock::now();  // T3
+
+            auto toMs = [](std::chrono::steady_clock::duration d) -> double {
+                return std::chrono::duration_cast<std::chrono::microseconds>(d).count() / 1000.0;
+            };
+
+            double queueWaitMs = toMs(mDispatchStartTime - mSubmitTime);  // T2 - T1
+            double execMs      = toMs(endTime - mDispatchStartTime);      // T3 - T2
+            double totalMs     = toMs(endTime - mSubmitTime);             // T3 - T1
+
+            JsonObject data;
+            data["job"]           = mJobName;          // which job class
+            data["id"]            = mCorrelationId;    // which invocation (human label)
+            data["queue_wait_ms"] = queueWaitMs;
+            data["exec_ms"]       = execMs;
+            data["total_ms"]      = totalMs;
+
+            std::string payload;
+            data.ToString(payload);
+
+            Exchange::GatewayContext ctx;
+            ctx.requestId    = 0;
+            ctx.connectionId = 0;
+            ctx.appId        = mJobName;
+
+            mClient->RecordEvent(ctx, AGW_MARKER_JOB_TIMING, payload);
+        }
+
+    private:
+        TelemetryClient* mClient;
+        std::string mJobName;                                      // payload label
+        std::string mCorrelationId;                                // payload label
+        std::chrono::steady_clock::time_point mSubmitTime;         // T1 (from job ctor)
+        std::chrono::steady_clock::time_point mDispatchStartTime;  // T2 (captured in ctor above)
+    };
+
 } // namespace AppGatewayTelemetryHelper
 } // namespace Plugin
 } // namespace WPEFramework
@@ -575,7 +647,8 @@ namespace AppGatewayTelemetryHelper {
  * 3. **Error Reporting (Events)**: Report API and service errors
  * 4. **Latency Tracking (Metrics)**: Report timing measurements
  * 5. **Response Tracking**: Track response payloads for success/failure detection
- * 6. **Generic Telemetry**: Low-level event/metric reporting
+ * 6. **Job Timing Macros**: Capture WorkerPool submit-to-dispatch latency
+ * 7. **Generic Telemetry**: Low-level event/metric reporting
  */
 
 //=============================================================================
@@ -857,7 +930,66 @@ namespace AppGatewayTelemetryHelper {
     } while(0)
 
 //=============================================================================
-// 6. GENERIC TELEMETRY REPORTING MACROS (Low-level Interface)
+// 6. JOB TIMING MACROS (Submit → Dispatch Start → Dispatch End)
+//=============================================================================
+
+/**
+ * @brief Capture T1: Record the submit timestamp in the job constructor.
+ *
+ * Expands to an initializer-list entry — place it LAST in the job's
+ * constructor initializer list (after all other members are initialized).
+ * Also add `std::chrono::steady_clock::time_point mSubmitTime;` to
+ * the job's private members.
+ *
+ * Why last? C++ initializes members in declaration order. Placing the
+ * timestamp capture last ensures all other fields are ready, and that
+ * the timestamp is as close as possible to the actual Submit() call.
+ *
+ * Example:
+ *   WsMsgJob(...) : mParent(*parent), mMethod(method), mParams(params),
+ *                   mRequestId(requestId), mConnectionId(connectionId),
+ *                   AGW_JOB_CAPTURE_SUBMIT_TIME()   // ← last, T1
+ *   { mParent.AddRef(); }
+ *
+ *   private:
+ *     ...existing members...
+ *     std::chrono::steady_clock::time_point mSubmitTime;  // ← add this
+ */
+#define AGW_JOB_CAPTURE_SUBMIT_TIME() \
+    mSubmitTime(std::chrono::steady_clock::now())
+
+/**
+ * @brief T2 + T3: Report all three timing values via RAII.
+ * @param varName        Variable name for the ScopedJobTimer instance
+ * @param jobName        Descriptive string for this job — payload label only.
+ *                       Can be a plain class name OR enriched with job-specific
+ *                       context by appending any member field value.
+ *                       e.g., "WsMsgJob[" + mMethod + "]"
+ *                            "SubscriberJob[subscribe:" + mEvent + "]"
+ *                            "ConnectionStatusNotificationJob[" + (mConnected?"connect":"disconnect") + "]"
+ * @param correlationId  Any string from the job's own fields — payload label only
+ *                       (e.g., std::to_string(mRequestId), mAppId, mMethod)
+ *                       Pass "" if no natural identity field exists.
+ *
+ * Place at the VERY FIRST LINE of the job's Dispatch() body.
+ * ScopedJobTimer constructor captures T2 (Dispatch start).
+ * ScopedJobTimer destructor fires at end of Dispatch() and captures T3,
+ * then emits: queue_wait_ms (T2-T1), exec_ms (T3-T2), total_ms (T3-T1).
+ *
+ * Example in WsMsgJob::Dispatch():
+ *   void Dispatch() override {
+ *       AGW_TRACK_JOB_LATENCY(timer,
+ *           "WsMsgJob[" + mMethod + "]",
+ *           std::to_string(mRequestId) + ":" + std::to_string(mConnectionId));
+ *       mParent.DispatchWsMsg(mMethod, mParams, mRequestId, mConnectionId);
+ *   }  // ← timer destructs here, T3 captured, telemetry emitted
+ */
+#define AGW_TRACK_JOB_LATENCY(varName, jobName, correlationId)                         \
+    WPEFramework::Plugin::AppGatewayTelemetryHelper::ScopedJobTimer varName(           \
+        &GetLocalTelemetryClient(), jobName, correlationId, mSubmitTime)
+
+//=============================================================================
+// 8. GENERIC TELEMETRY REPORTING MACROS (Low-level Interface)
 //=============================================================================
 
 /**

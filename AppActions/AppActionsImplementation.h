@@ -7,6 +7,7 @@
 #include "Module.h"
 #include <interfaces/IConfiguration.h>
 #include <interfaces/IAppActions.h>
+#include "UtilsAppGatewayTelemetry.h"
 
 namespace WPEFramework {
 namespace Plugin {
@@ -58,7 +59,8 @@ class AppActionsImplementation :
         {
         public:
             NotifyJob(AppActionsImplementation* parent, const string& initiator, const string& intent, const string& handlerAppId)
-                : mParent(*parent), mInitiator(initiator), mIntent(intent), mHandlerAppId(handlerAppId)
+                : mParent(*parent), mInitiator(initiator), mIntent(intent), mHandlerAppId(handlerAppId),
+                  AGW_JOB_CAPTURE_SUBMIT_TIME()
             {
                 mParent.AddRef();
             }
@@ -79,6 +81,8 @@ class AppActionsImplementation :
 
             void Dispatch() override
             {
+                AGW_TRACK_JOB_LATENCY(timer, "NotifyJob[" + mIntent + "]",
+                    mInitiator + ":" + mHandlerAppId);
                 mParent.DispatchActionStartRequest(mInitiator, mIntent, mHandlerAppId);
             }
 
@@ -87,6 +91,7 @@ class AppActionsImplementation :
             const string mInitiator;
             const string mIntent;
             const string mHandlerAppId;
+            std::chrono::steady_clock::time_point mSubmitTime;
         };
 
         PluginHost::IShell *mService;

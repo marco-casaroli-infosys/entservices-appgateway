@@ -33,6 +33,9 @@
 #include "StringUtils.h"
 
 #define DEFAULT_CONFIG_PATH "/etc/app-gateway/resolution.base.json"
+
+// Telemetry client definition for job timing macros
+AGW_DEFINE_TELEMETRY_CLIENT(AGW_PLUGIN_APPGATEWAYCOMMON)
 #define RESOLUTIONS_PATH_CFG "/etc/app-gateway/resolutions.json"
 
 // Build and vendor config paths are defined via CMake
@@ -556,6 +559,8 @@ namespace WPEFramework
 
         void AppGatewayImplementation::EventHookJob::Dispatch()
         {
+            AGW_TRACK_JOB_LATENCY(timer, "EventHookJob[" + mHookMethod + "]",
+                std::to_string(mContext.requestId) + ":" + mContext.appId);
             LOGINFO("EventHookJob: triggering hook method=%s for appId=%s",
                      mHookMethod.c_str(), mContext.appId.c_str());
             std::string resolution;

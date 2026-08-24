@@ -26,6 +26,7 @@
 #include <map>
 #include <unordered_set>
 #include <utility>
+#include "UtilsAppGatewayTelemetry.h"
 
 using namespace WPEFramework;
 
@@ -36,7 +37,8 @@ public:
     {
     public:
         EventDelegateDispatchJob(BaseEventDelegate *delegate, const string &event, const string &payload, string appId = "")
-            : mDelegate(*delegate), mEvent(event), mPayload(payload), mAppId(std::move(appId)) {}
+            : mDelegate(*delegate), mEvent(event), mPayload(payload), mAppId(std::move(appId)),
+              AGW_JOB_CAPTURE_SUBMIT_TIME() {}
 
         EventDelegateDispatchJob() = delete;
         EventDelegateDispatchJob(const EventDelegateDispatchJob &) = delete;
@@ -53,6 +55,8 @@ public:
 
         virtual void Dispatch()
         {
+            AGW_TRACK_JOB_LATENCY(timer, "EventDispatchJob[" + mEvent + "]",
+                mAppId.empty() ? mEvent : mAppId);
             mDelegate.DispatchToAppNotifications(mEvent, mPayload, mAppId);
         }
 
@@ -61,6 +65,7 @@ public:
         string mEvent;
         string mPayload;
         string mAppId;
+        std::chrono::steady_clock::time_point mSubmitTime;
     };
 
     BaseEventDelegate() : mRegisteredNotifications(),

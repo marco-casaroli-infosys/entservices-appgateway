@@ -27,6 +27,7 @@
 #include <map>
 #include "UtilsLogging.h"
 #include "UtilsController.h"
+#include "UtilsAppGatewayTelemetry.h"
 #include "delegate/SettingsDelegate.h"
 #include <unordered_map>
 #include <functional>
@@ -50,7 +51,8 @@ namespace WPEFramework {
                 EventRegistrationJob(AppGatewayCommon *parent,
                 Exchange::IAppNotificationHandler::IEmitter *cb,
                 const string &event,
-                const bool listen): mParent(*parent), mCallback(cb), mEvent(event), mListen(listen) {
+                const bool listen): mParent(*parent), mCallback(cb), mEvent(event), mListen(listen),
+                  AGW_JOB_CAPTURE_SUBMIT_TIME() {
                     if (mCallback != nullptr) {
                         mCallback->AddRef();
                     }
@@ -74,6 +76,8 @@ namespace WPEFramework {
                 }
                 virtual void Dispatch()
                 {
+                    AGW_TRACK_JOB_LATENCY(timer, "EventRegJob[" + mEvent + "]",
+                        std::string(mListen?"sub":"unsub") + ":" + mEvent);
                     mParent.mDelegate->HandleAppEventNotifier(mCallback, mEvent, mListen);
                     // fetch_sub returns the previous value; if it was 1 the
                     // counter is now 0 (last in-flight job finished). Lock
@@ -90,6 +94,7 @@ namespace WPEFramework {
             Exchange::IAppNotificationHandler::IEmitter *mCallback;
             const string mEvent;
             const bool mListen;
+            std::chrono::steady_clock::time_point mSubmitTime;
 
         };
 

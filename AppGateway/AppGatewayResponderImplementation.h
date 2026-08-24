@@ -27,6 +27,7 @@
 #include <com/com.h>
 #include <core/core.h>
 #include <map>
+#include "UtilsAppGatewayTelemetry.h"
 #include <unordered_set>
 #include <sstream>
 #include <unordered_map>
@@ -81,7 +82,8 @@ namespace Plugin {
             const std::string& params,
             const uint32_t requestId,
             const uint32_t connectionId)
-                : mParent(*parent), mMethod(method), mParams(params), mRequestId(requestId), mConnectionId(connectionId)
+                : mParent(*parent), mMethod(method), mParams(params), mRequestId(requestId), mConnectionId(connectionId),
+                  AGW_JOB_CAPTURE_SUBMIT_TIME()
             {
                 mParent.AddRef();
             }
@@ -104,6 +106,8 @@ namespace Plugin {
             }
             virtual void Dispatch()
             {
+                AGW_TRACK_JOB_LATENCY(timer, "WsMsgJob[" + mMethod + "]",
+                    std::to_string(mRequestId) + ":" + std::to_string(mConnectionId));
                 mParent.DispatchWsMsg(mMethod, mParams, mRequestId, mConnectionId);
             }
 
@@ -113,6 +117,7 @@ namespace Plugin {
             const std::string mParams;
             const uint32_t mRequestId;
             const uint32_t mConnectionId;
+            std::chrono::steady_clock::time_point mSubmitTime;
         };
 
         class EXTERNAL RespondJob : public Core::IDispatch
@@ -123,7 +128,8 @@ namespace Plugin {
             const uint32_t requestId,
             const std::string& payload
             )
-                : mParent(*parent), mPayload(payload), mRequestId(requestId), mConnectionId(connectionId)
+                : mParent(*parent), mPayload(payload), mRequestId(requestId), mConnectionId(connectionId),
+                  AGW_JOB_CAPTURE_SUBMIT_TIME()
             {
                 mParent.AddRef();
             }
@@ -145,6 +151,8 @@ namespace Plugin {
             }
             virtual void Dispatch()
             {
+                AGW_TRACK_JOB_LATENCY(timer, "RespondJob", 
+                    std::to_string(mRequestId) + ":" + std::to_string(mConnectionId));
                 mParent.ReturnMessageInSocket(mConnectionId, mRequestId, mPayload);                
             }
 
@@ -153,6 +161,7 @@ namespace Plugin {
             const std::string mPayload;
             const uint32_t mRequestId;
             const uint32_t mConnectionId;
+            std::chrono::steady_clock::time_point mSubmitTime;
         };
 
           class EXTERNAL EmitJob : public Core::IDispatch
@@ -163,7 +172,8 @@ namespace Plugin {
             const std::string& designator,
             const std::string& payload
             )
-                : mParent(*parent), mPayload(payload), mDesignator(designator), mConnectionId(connectionId)
+                : mParent(*parent), mPayload(payload), mDesignator(designator), mConnectionId(connectionId),
+                  AGW_JOB_CAPTURE_SUBMIT_TIME()
             {
                 mParent.AddRef();
             }
@@ -185,6 +195,8 @@ namespace Plugin {
             }
             virtual void Dispatch()
             {
+                AGW_TRACK_JOB_LATENCY(timer, "EmitJob[" + mDesignator + "]",
+                    std::to_string(mConnectionId));
                 mParent.mWsManager.DispatchNotificationToConnection(mConnectionId, mDesignator, mPayload);
             }
 
@@ -193,6 +205,7 @@ namespace Plugin {
             const std::string mPayload;
             const std::string mDesignator;
             const uint32_t mConnectionId;
+            std::chrono::steady_clock::time_point mSubmitTime;
         };
 
         class EXTERNAL RequestJob : public Core::IDispatch
@@ -204,7 +217,8 @@ namespace Plugin {
             const std::string& designator,
             const std::string& payload
             )
-                : mParent(*parent), mPayload(payload), mDesignator(designator), mConnectionId(connectionId), mRequestId(requestId)
+                : mParent(*parent), mPayload(payload), mDesignator(designator), mConnectionId(connectionId), mRequestId(requestId),
+                  AGW_JOB_CAPTURE_SUBMIT_TIME()
             {
                 mParent.AddRef();
             }
@@ -226,6 +240,8 @@ namespace Plugin {
             }
             virtual void Dispatch()
             {
+                AGW_TRACK_JOB_LATENCY(timer, "RequestJob[" + mDesignator + "]",
+                    std::to_string(mRequestId) + ":" + std::to_string(mConnectionId));
                 mParent.mWsManager.SendRequestToConnection(mConnectionId, mDesignator, mRequestId, mPayload);
             }
 
@@ -235,6 +251,7 @@ namespace Plugin {
             const std::string mDesignator;
             const uint32_t mConnectionId;
             const uint32_t mRequestId;
+            std::chrono::steady_clock::time_point mSubmitTime;
         };
 
         class EXTERNAL ConnectionStatusNotificationJob : public Core::IDispatch
@@ -245,7 +262,8 @@ namespace Plugin {
             const std::string& appId,
             const bool connected
             )
-                : mParent(*parent), mConnectionId(connectionId), mAppId(appId), mConnected(connected)
+                : mParent(*parent), mConnectionId(connectionId), mAppId(appId), mConnected(connected),
+                  AGW_JOB_CAPTURE_SUBMIT_TIME()
             {
                 mParent.AddRef();
             }
@@ -267,6 +285,8 @@ namespace Plugin {
             }
             virtual void Dispatch()
             {
+                AGW_TRACK_JOB_LATENCY(timer, "ConnStatusJob[" + std::string(mConnected?"connect":"disconnect") + "]",
+                    std::to_string(mConnectionId) + ":" + mAppId);
                 mParent.OnConnectionStatusChanged(mAppId, mConnectionId, mConnected);
             }
 
@@ -275,6 +295,7 @@ namespace Plugin {
             const uint32_t mConnectionId;
             const std::string mAppId;
             const bool mConnected;
+            std::chrono::steady_clock::time_point mSubmitTime;
         };
 
 

@@ -28,6 +28,7 @@
 #include <com/com.h>
 #include <core/core.h>
 #include <map>
+#include "UtilsAppGatewayTelemetry.h"
 
 
 namespace WPEFramework {
@@ -66,7 +67,8 @@ namespace Plugin {
             const std::string& payload,
             const std::string& destination
             )
-                : mParent(*parent), mPayload(payload), mContext(context), mDestination(destination)
+                : mParent(*parent), mPayload(payload), mContext(context), mDestination(destination),
+                  AGW_JOB_CAPTURE_SUBMIT_TIME()
             {
                 mParent.AddRef();
             }
@@ -88,6 +90,8 @@ namespace Plugin {
             }
             virtual void Dispatch()
             {
+                AGW_TRACK_JOB_LATENCY(timer, "ImplRespondJob",
+                    std::to_string(mContext.requestId) + ":" + mContext.appId);
                 if(ContextUtils::IsOriginGateway(mDestination)) {
                     mParent.ReturnMessageInSocket(mContext, std::move(mPayload));
                 } else {
@@ -101,6 +105,7 @@ namespace Plugin {
             const std::string mPayload;
             const Context mContext;
             const std::string mDestination;
+            std::chrono::steady_clock::time_point mSubmitTime;
         };
 
         class EXTERNAL EventHookJob : public Core::IDispatch
@@ -109,7 +114,8 @@ namespace Plugin {
             EventHookJob(AppGatewayImplementation* parent,
                 const Context& context,
                 const std::string& hookMethod)
-                : mParent(*parent), mContext(context), mHookMethod(hookMethod)
+                : mParent(*parent), mContext(context), mHookMethod(hookMethod),
+                  AGW_JOB_CAPTURE_SUBMIT_TIME()
             {
                 mParent.AddRef();
             }
@@ -135,6 +141,7 @@ namespace Plugin {
             AppGatewayImplementation& mParent;
             const Context mContext;
             const std::string mHookMethod;
+            std::chrono::steady_clock::time_point mSubmitTime;
         };
 
         Core::hresult HandleEvent(const Context &context, const string &alias, const string &event, const string &origin,  const bool listen);
