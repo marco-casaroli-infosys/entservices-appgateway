@@ -354,6 +354,11 @@ namespace Plugin {
             SendT2Event(eventName.c_str(), eventData);
             return Core::ERROR_NONE;
         }
+        else if (AGW_MARKER_JOB_TIMING == eventName) {
+            LOGINFO("Sending job timing event to T2: job=%s, timing=%s", context.appId.c_str(), eventData.c_str());
+            SendT2Event(eventName.c_str(), eventData, context);
+            isImmediateEvent = true;
+        }
 
         // Immediate JSON-wrapped events: each entry names the JSON field to extract,
         // the aggregate-tracking method to call, and maps to the same send-then-return path.
