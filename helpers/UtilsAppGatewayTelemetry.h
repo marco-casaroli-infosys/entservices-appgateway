@@ -415,7 +415,7 @@ namespace AppGatewayTelemetryHelper {
      * 
      * Usage:
      *   {
-     *       ScopedApiTimer timer(&GetLocalTelemetryClient(), context, "GetSettings");
+     *       ScopedApiTimer timer(&AGW_TELEMETRY_CLIENT_ACCESSOR(), context, "GetSettings");
      *       // ... do API work ...
      *       if (failed) timer.SetFailed("TIMEOUT");
      *   } // Timer automatically reports on destruction
@@ -484,7 +484,7 @@ namespace AppGatewayTelemetryHelper {
      * 
      * Usage:
      *   {
-     *       ScopedServiceTimer timer(&GetLocalTelemetryClient(), context, AGW_SERVICE_XYZ_PERMISSION);
+     *       ScopedServiceTimer timer(&AGW_TELEMETRY_CLIENT_ACCESSOR(), context, AGW_SERVICE_XYZ_PERMISSION);
      *       // ... make external service call ...
      *       if (failed) timer.SetFailed(AGW_ERROR_CONNECTION_TIMEOUT);
      *   } // Timer automatically reports on destruction
@@ -548,7 +548,7 @@ namespace AppGatewayTelemetryHelper {
      * in the job's constructor and passed in here. The destructor fires at the
      * end of Dispatch(), recording queue-wait, execution, and total durations.
      *
-     * @param client        Telemetry client (from GetLocalTelemetryClient())
+     * @param client        Telemetry client (from AGW_TELEMETRY_CLIENT_ACCESSOR())
      * @param jobName       Job class name — label only, e.g. "WsMsgJob"
      * @param correlationId Any identity string from the job's own fields
      *                      (e.g. requestId, appId, method) — label only
@@ -617,6 +617,23 @@ namespace AppGatewayTelemetryHelper {
 } // namespace Plugin
 } // namespace WPEFramework
 
+#define AGW_TELEMETRY_JOIN_IMPL(a, b) a##b
+#define AGW_TELEMETRY_JOIN(a, b) AGW_TELEMETRY_JOIN_IMPL(a, b)
+#define AGW_TELEMETRY_CLIENT_ACCESSOR AGW_TELEMETRY_JOIN(GetTelemetryClient_, MODULE_NAME)
+#define AGW_TELEMETRY_PLUGIN_NAME AGW_TELEMETRY_JOIN(GetTelemetryPluginName_, MODULE_NAME)
+
+namespace WPEFramework {
+namespace Plugin {
+namespace AppGatewayTelemetryHelper {
+TelemetryClient& AGW_TELEMETRY_CLIENT_ACCESSOR();
+const char* AGW_TELEMETRY_PLUGIN_NAME();
+}
+}
+}
+
+using WPEFramework::Plugin::AppGatewayTelemetryHelper::AGW_TELEMETRY_CLIENT_ACCESSOR;
+using WPEFramework::Plugin::AppGatewayTelemetryHelper::AGW_TELEMETRY_PLUGIN_NAME;
+
 //=============================================================================
 // TELEMETRY REPORTING MACROS
 //=============================================================================
@@ -676,14 +693,18 @@ namespace AppGatewayTelemetryHelper {
  *   }}
  */
 #define AGW_DEFINE_TELEMETRY_CLIENT(pluginName) \
-    namespace { \
-        WPEFramework::Plugin::AppGatewayTelemetryHelper::TelemetryClient& GetLocalTelemetryClient() { \
-            static WPEFramework::Plugin::AppGatewayTelemetryHelper::TelemetryClient instance; \
+    namespace WPEFramework { \
+    namespace Plugin { \
+    namespace AppGatewayTelemetryHelper { \
+        TelemetryClient& AGW_TELEMETRY_CLIENT_ACCESSOR() { \
+            static TelemetryClient instance; \
             return instance; \
         } \
-        const char* GetLocalPluginName() { \
+        const char* AGW_TELEMETRY_PLUGIN_NAME() { \
             return pluginName; \
         } \
+    } \
+    } \
     }
 
 
@@ -702,7 +723,7 @@ namespace AppGatewayTelemetryHelper {
  */
 #define AGW_TELEMETRY_INIT(service) \
     do { \
-        GetLocalTelemetryClient().Initialize(service, GetLocalPluginName()); \
+        AGW_TELEMETRY_CLIENT_ACCESSOR().Initialize(service, AGW_TELEMETRY_PLUGIN_NAME()); \
     } while(0)
 
 /**
@@ -717,7 +738,7 @@ namespace AppGatewayTelemetryHelper {
  */
 #define AGW_TELEMETRY_DEINIT() \
     do { \
-        GetLocalTelemetryClient().Deinitialize(); \
+        AGW_TELEMETRY_CLIENT_ACCESSOR().Deinitialize(); \
     } while(0)
 
 //=============================================================================
@@ -748,7 +769,7 @@ namespace AppGatewayTelemetryHelper {
  *   } // Timer automatically records on scope exit
  */
 #define AGW_RECORD_BOOTSTRAP_TIME() \
-    WPEFramework::Plugin::AppGatewayTelemetryHelper::ScopedBootstrapTimer bootstrapTimer(&GetLocalTelemetryClient())
+    WPEFramework::Plugin::AppGatewayTelemetryHelper::ScopedBootstrapTimer bootstrapTimer(&AGW_TELEMETRY_CLIENT_ACCESSOR())
 
 //=============================================================================
 // 3. ERROR REPORTING MACROS (Events via RecordTelemetryEvent)
@@ -778,7 +799,7 @@ namespace AppGatewayTelemetryHelper {
  */
 #define AGW_REPORT_API_ERROR(context, apiName, errorCode) \
     do { \
-        auto& client = GetLocalTelemetryClient(); \
+        auto& client = AGW_TELEMETRY_CLIENT_ACCESSOR(); \
         if (client.IsAvailable()) { \
             client.RecordApiError(context, apiName, errorCode); \
         } \
@@ -808,7 +829,7 @@ namespace AppGatewayTelemetryHelper {
  */
 #define AGW_REPORT_EXTERNAL_SERVICE_ERROR(context, serviceName, errorCode) \
     do { \
-        auto& client = GetLocalTelemetryClient(); \
+        auto& client = AGW_TELEMETRY_CLIENT_ACCESSOR(); \
         if (client.IsAvailable()) { \
             client.RecordExternalServiceError(context, serviceName, errorCode); \
         } \
@@ -840,7 +861,7 @@ namespace AppGatewayTelemetryHelper {
  *   } // Timer automatically reports success/failure with timing
  */
 #define AGW_TRACK_API_CALL(varName, context, apiName) \
-    WPEFramework::Plugin::AppGatewayTelemetryHelper::ScopedApiTimer varName(&GetLocalTelemetryClient(), context, apiName)
+    WPEFramework::Plugin::AppGatewayTelemetryHelper::ScopedApiTimer varName(&AGW_TELEMETRY_CLIENT_ACCESSOR(), context, apiName)
 
 /**
  * @brief Automatic external service call tracking with RAII (RECOMMENDED for service calls)
@@ -863,7 +884,7 @@ namespace AppGatewayTelemetryHelper {
  *   } // Tracker automatically reports success/failure with timing
  */
 #define AGW_TRACK_SERVICE_CALL(varName, context, serviceName) \
-    WPEFramework::Plugin::AppGatewayTelemetryHelper::ScopedServiceTimer varName(&GetLocalTelemetryClient(), context, serviceName)
+    WPEFramework::Plugin::AppGatewayTelemetryHelper::ScopedServiceTimer varName(&AGW_TELEMETRY_CLIENT_ACCESSOR(), context, serviceName)
 
 /**
  * @brief Report an API latency metric to AppGateway telemetry (manual)
@@ -881,7 +902,7 @@ namespace AppGatewayTelemetryHelper {
  */
 #define AGW_REPORT_API_LATENCY(context, apiName, latencyMs) \
     do { \
-        auto& client = GetLocalTelemetryClient(); \
+        auto& client = AGW_TELEMETRY_CLIENT_ACCESSOR(); \
         if (client.IsAvailable()) { \
             client.RecordApiLatency(context, apiName, latencyMs); \
         } \
@@ -906,7 +927,7 @@ namespace AppGatewayTelemetryHelper {
  */
 #define AGW_REPORT_SERVICE_LATENCY(context, serviceName, latencyMs) \
     do { \
-        auto& client = GetLocalTelemetryClient(); \
+        auto& client = AGW_TELEMETRY_CLIENT_ACCESSOR(); \
         if (client.IsAvailable()) { \
             client.RecordServiceLatency(context, serviceName, latencyMs); \
         } \
@@ -923,7 +944,7 @@ namespace AppGatewayTelemetryHelper {
  */
 #define AGW_TRACK_RESPONSE_PAYLOAD(context, payload) \
     do { \
-        auto& client = GetLocalTelemetryClient(); \
+        auto& client = AGW_TELEMETRY_CLIENT_ACCESSOR(); \
         if (client.IsAvailable()) { \
             client.TrackResponsePayload(context, payload); \
         } \
@@ -946,25 +967,20 @@ namespace AppGatewayTelemetryHelper {
  * the timestamp is as close as possible to the actual Submit() call.
  *
  * Example:
- *   WsMsgJob(...) : mParent(*parent), mMethod(method), mParams(params),
- *                   mRequestId(requestId), mConnectionId(connectionId),
- *                   AGW_JOB_CAPTURE_SUBMIT_TIME()   // ← last, T1
+ *   WsMsgJob(...)
+ *       : mParent(*parent), mMethod(method), mParams(params),
+ *         mRequestId(requestId), mConnectionId(connectionId),
+ *         AGW_JOB_CAPTURE_SUBMIT_TIME()   // ← last, T1
  *   { mParent.AddRef(); }
  *
  *   private:
  *     ...existing members...
  *     std::chrono::steady_clock::time_point mSubmitTime;  // ← add this
- *     WPEFramework::Plugin::AppGatewayTelemetryHelper::TelemetryClient* mTelemetryClient;  // ← add this
  *
- * Why capture the client pointer here?
- * The constructor is always called from a .cpp file that has
- * AGW_DEFINE_TELEMETRY_CLIENT in scope, so GetLocalTelemetryClient() is
- * reachable. Dispatch() may be defined inline in a header included by
- * multiple .cpp files, where GetLocalTelemetryClient() would be out of scope.
+ * The job timing macro resolves the client owned by the current plugin module.
  */
 #define AGW_JOB_CAPTURE_SUBMIT_TIME() \
-    mSubmitTime(std::chrono::steady_clock::now()),   \
-    mTelemetryClient(&GetLocalTelemetryClient())
+    mSubmitTime(std::chrono::steady_clock::now())
 
 /**
  * @brief T2 + T3: Report all three timing values via RAII.
@@ -994,7 +1010,7 @@ namespace AppGatewayTelemetryHelper {
  */
 #define AGW_TRACK_JOB_LATENCY(varName, jobName, correlationId)                         \
     WPEFramework::Plugin::AppGatewayTelemetryHelper::ScopedJobTimer varName(           \
-        mTelemetryClient, jobName, correlationId, mSubmitTime)
+        &WPEFramework::Plugin::AppGatewayTelemetryHelper::AGW_TELEMETRY_CLIENT_ACCESSOR(), jobName, correlationId, mSubmitTime)
 
 //=============================================================================
 // 8. GENERIC TELEMETRY REPORTING MACROS (Low-level Interface)
@@ -1024,7 +1040,7 @@ namespace AppGatewayTelemetryHelper {
  */
 #define AGW_REPORT_METRIC(context, metricName, value, unit) \
     do { \
-        auto& client = GetLocalTelemetryClient(); \
+        auto& client = AGW_TELEMETRY_CLIENT_ACCESSOR(); \
         if (client.IsAvailable()) { \
             client.RecordMetric(context, metricName, value, unit); \
         } \
@@ -1048,7 +1064,7 @@ namespace AppGatewayTelemetryHelper {
  */
 #define AGW_REPORT_EVENT(context, eventName, eventData) \
     do { \
-        auto& client = GetLocalTelemetryClient(); \
+        auto& client = AGW_TELEMETRY_CLIENT_ACCESSOR(); \
         if (client.IsAvailable()) { \
             client.RecordEvent(context, eventName, eventData); \
         } \

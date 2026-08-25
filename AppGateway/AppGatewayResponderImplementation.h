@@ -118,7 +118,6 @@ namespace Plugin {
             const uint32_t mRequestId;
             const uint32_t mConnectionId;
             std::chrono::steady_clock::time_point mSubmitTime;
-            WPEFramework::Plugin::AppGatewayTelemetryHelper::TelemetryClient* mTelemetryClient;
         };
 
         class EXTERNAL RespondJob : public Core::IDispatch
@@ -163,7 +162,6 @@ namespace Plugin {
             const uint32_t mRequestId;
             const uint32_t mConnectionId;
             std::chrono::steady_clock::time_point mSubmitTime;
-            WPEFramework::Plugin::AppGatewayTelemetryHelper::TelemetryClient* mTelemetryClient;
         };
 
           class EXTERNAL EmitJob : public Core::IDispatch
@@ -208,7 +206,6 @@ namespace Plugin {
             const std::string mDesignator;
             const uint32_t mConnectionId;
             std::chrono::steady_clock::time_point mSubmitTime;
-            WPEFramework::Plugin::AppGatewayTelemetryHelper::TelemetryClient* mTelemetryClient;
         };
 
         class EXTERNAL RequestJob : public Core::IDispatch
@@ -255,7 +252,6 @@ namespace Plugin {
             const uint32_t mConnectionId;
             const uint32_t mRequestId;
             std::chrono::steady_clock::time_point mSubmitTime;
-            WPEFramework::Plugin::AppGatewayTelemetryHelper::TelemetryClient* mTelemetryClient;
         };
 
         class EXTERNAL ConnectionStatusNotificationJob : public Core::IDispatch
@@ -300,7 +296,6 @@ namespace Plugin {
             const std::string mAppId;
             const bool mConnected;
             std::chrono::steady_clock::time_point mSubmitTime;
-            WPEFramework::Plugin::AppGatewayTelemetryHelper::TelemetryClient* mTelemetryClient;
         };
 
 

@@ -92,7 +92,6 @@ class AppActionsImplementation :
             const string mIntent;
             const string mHandlerAppId;
             std::chrono::steady_clock::time_point mSubmitTime;
-            WPEFramework::Plugin::AppGatewayTelemetryHelper::TelemetryClient* mTelemetryClient;
         };
 
         PluginHost::IShell *mService;

@@ -193,7 +193,6 @@ namespace Plugin {
                 string mModule;
                 bool mSubscribe;
                 std::chrono::steady_clock::time_point mSubmitTime;
-                WPEFramework::Plugin::AppGatewayTelemetryHelper::TelemetryClient* mTelemetryClient;
         };
 
         class EXTERNAL EmitJob : public Core::IDispatch 
@@ -229,7 +228,6 @@ namespace Plugin {
                 string mPayload;
                 string mAppId;
                 std::chrono::steady_clock::time_point mSubmitTime;
-                WPEFramework::Plugin::AppGatewayTelemetryHelper::TelemetryClient* mTelemetryClient;
         };
 
         class Emitter: public Exchange::IAppNotificationHandler::IEmitter {

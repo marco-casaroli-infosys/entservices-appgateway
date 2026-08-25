@@ -95,7 +95,6 @@ namespace WPEFramework {
             const string mEvent;
             const bool mListen;
             std::chrono::steady_clock::time_point mSubmitTime;
-            WPEFramework::Plugin::AppGatewayTelemetryHelper::TelemetryClient* mTelemetryClient;
 
         };
 

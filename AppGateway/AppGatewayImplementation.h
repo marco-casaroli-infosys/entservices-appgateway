@@ -106,7 +106,6 @@ namespace Plugin {
             const Context mContext;
             const std::string mDestination;
             std::chrono::steady_clock::time_point mSubmitTime;
-            WPEFramework::Plugin::AppGatewayTelemetryHelper::TelemetryClient* mTelemetryClient;
         };
 
         class EXTERNAL EventHookJob : public Core::IDispatch
@@ -143,7 +142,6 @@ namespace Plugin {
             const Context mContext;
             const std::string mHookMethod;
             std::chrono::steady_clock::time_point mSubmitTime;
-            WPEFramework::Plugin::AppGatewayTelemetryHelper::TelemetryClient* mTelemetryClient;
         };
 
         Core::hresult HandleEvent(const Context &context, const string &alias, const string &event, const string &origin,  const bool listen);

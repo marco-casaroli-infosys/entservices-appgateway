@@ -133,7 +133,7 @@ namespace Plugin {
             // If AppGateway is not yet active the client stores mService and lazy-reconnects
             // via IsAvailable() the first time a telemetry event is reported.
             SYSLOG(Logging::Startup, (_T("AppActionsImplementation telemetry client: %s"),
-                GetLocalTelemetryClient().IsAvailable()
+                AGW_TELEMETRY_CLIENT_ACCESSOR().IsAvailable()
                     ? "connected to AppGateway"
                     : "AppGateway not yet active - will lazy-connect on first use"));
             SYSLOG(Logging::Startup, (_T("AppActionsImplementation service configured successfully")));
