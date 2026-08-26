@@ -56,7 +56,7 @@ public:
         virtual void Dispatch()
         {
             AGW_TRACK_JOB_LATENCY(timer, "EventDispatchJob[" + mEvent + "]",
-                mAppId.empty() ? mEvent : mAppId);
+                0, 0, mAppId);
             mDelegate.DispatchToAppNotifications(mEvent, mPayload, mAppId);
         }
 

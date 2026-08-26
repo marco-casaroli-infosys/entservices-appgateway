@@ -31,6 +31,8 @@
 #include "AppActionsImplementation.h"
 #undef private
 
+AGW_DEFINE_TELEMETRY_CLIENT(AGW_PLUGIN_APPACTIONS)
+
 #include "ServiceMock.h"
 #include "WorkerPoolImplementation.h"
 #include "ThunderPortability.h"

@@ -29,6 +29,8 @@
 #include "AppGatewayCommon.h"
 #undef private
 
+AGW_DEFINE_TELEMETRY_CLIENT(AGW_PLUGIN_APPGATEWAYCOMMON)
+
 #include "ServiceMock.h"
 #include "ThunderPortability.h"
 #include "WorkerPoolImplementation.h"

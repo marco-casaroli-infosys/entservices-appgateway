@@ -91,7 +91,7 @@ namespace Plugin {
             virtual void Dispatch()
             {
                 AGW_TRACK_JOB_LATENCY(timer, "ImplRespondJob",
-                    std::to_string(mContext.requestId) + ":" + mContext.appId);
+                    mContext.requestId, mContext.connectionId, mContext.appId);
                 if(ContextUtils::IsOriginGateway(mDestination)) {
                     mParent.ReturnMessageInSocket(mContext, std::move(mPayload));
                 } else {

@@ -107,7 +107,7 @@ namespace Plugin {
             virtual void Dispatch()
             {
                 AGW_TRACK_JOB_LATENCY(timer, "WsMsgJob[" + mMethod + "]",
-                    std::to_string(mRequestId) + ":" + std::to_string(mConnectionId));
+                    mRequestId, mConnectionId, "");
                 mParent.DispatchWsMsg(mMethod, mParams, mRequestId, mConnectionId);
             }
 
@@ -152,7 +152,7 @@ namespace Plugin {
             virtual void Dispatch()
             {
                 AGW_TRACK_JOB_LATENCY(timer, "RespondJob", 
-                    std::to_string(mRequestId) + ":" + std::to_string(mConnectionId));
+                    mRequestId, mConnectionId, "");
                 mParent.ReturnMessageInSocket(mConnectionId, mRequestId, mPayload);                
             }
 
@@ -196,7 +196,7 @@ namespace Plugin {
             virtual void Dispatch()
             {
                 AGW_TRACK_JOB_LATENCY(timer, "EmitJob[" + mDesignator + "]",
-                    std::to_string(mConnectionId));
+                    0, mConnectionId, "");
                 mParent.mWsManager.DispatchNotificationToConnection(mConnectionId, mDesignator, mPayload);
             }
 
@@ -241,7 +241,7 @@ namespace Plugin {
             virtual void Dispatch()
             {
                 AGW_TRACK_JOB_LATENCY(timer, "RequestJob[" + mDesignator + "]",
-                    std::to_string(mRequestId) + ":" + std::to_string(mConnectionId));
+                    mRequestId, mConnectionId, "");
                 mParent.mWsManager.SendRequestToConnection(mConnectionId, mDesignator, mRequestId, mPayload);
             }
 
@@ -286,7 +286,7 @@ namespace Plugin {
             virtual void Dispatch()
             {
                 AGW_TRACK_JOB_LATENCY(timer, "ConnStatusJob[" + std::string(mConnected?"connect":"disconnect") + "]",
-                    std::to_string(mConnectionId) + ":" + mAppId);
+                    0, mConnectionId, mAppId);
                 mParent.OnConnectionStatusChanged(mAppId, mConnectionId, mConnected);
             }
 

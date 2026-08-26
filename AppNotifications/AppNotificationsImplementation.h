@@ -179,7 +179,7 @@ namespace Plugin {
                 virtual void Dispatch()
                 {
                     AGW_TRACK_JOB_LATENCY(timer, "SubscriberJob[" + std::string(mSubscribe?"sub":"unsub") + ":" + mEvent + "]",
-                        mEvent);
+                        0, 0, "");
                     if (mSubscribe) {
                         mParent.mThunderManager.Subscribe(mModule, mEvent);
                     } else {
@@ -218,7 +218,7 @@ namespace Plugin {
                 virtual void Dispatch()
                 {
                     AGW_TRACK_JOB_LATENCY(timer, "NotifEmitJob[" + mEvent + "]",
-                        mAppId);
+                        0, 0, mAppId);
                     mParent.mSubMap.EventUpdate(mEvent, mPayload, mAppId);
                 }
 

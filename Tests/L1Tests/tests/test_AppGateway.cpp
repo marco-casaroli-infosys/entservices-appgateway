@@ -39,6 +39,8 @@
 #include "Resolver.h"
 #undef private
 
+AGW_DEFINE_TELEMETRY_CLIENT(AGW_PLUGIN_APPGATEWAY)
+
 #include "ServiceMock.h"
 #include "COMLinkMock.h"
 #include "DispatcherMock.h"

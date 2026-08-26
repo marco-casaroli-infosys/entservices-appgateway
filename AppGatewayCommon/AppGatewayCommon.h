@@ -76,8 +76,8 @@ namespace WPEFramework {
                 }
                 virtual void Dispatch()
                 {
-                    AGW_TRACK_JOB_LATENCY(timer, "EventRegJob[" + mEvent + "]",
-                        std::string(mListen?"sub":"unsub") + ":" + mEvent);
+                    AGW_TRACK_JOB_LATENCY(timer,
+                        "EventRegJob[" + std::string(mListen?"sub":"unsub") + ":" + mEvent + "]", 0, 0, "");
                     mParent.mDelegate->HandleAppEventNotifier(mCallback, mEvent, mListen);
                     // fetch_sub returns the previous value; if it was 1 the
                     // counter is now 0 (last in-flight job finished). Lock

@@ -82,7 +82,7 @@ class AppActionsImplementation :
             void Dispatch() override
             {
                 AGW_TRACK_JOB_LATENCY(timer, "NotifyJob[" + mIntent + "]",
-                    mInitiator + ":" + mHandlerAppId);
+                    0, 0, mHandlerAppId);
                 mParent.DispatchActionStartRequest(mInitiator, mIntent, mHandlerAppId);
             }
 

@@ -38,6 +38,8 @@
 #include "AppNotifications.h"
 #undef private
 
+AGW_DEFINE_TELEMETRY_CLIENT(AGW_PLUGIN_APPNOTIFICATIONS)
+
 #include "WorkerPoolImplementation.h"
 
 #include "ServiceMock.h"

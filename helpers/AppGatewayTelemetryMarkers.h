@@ -185,9 +185,9 @@
  *   - queue_wait_ms  : T2 - T1 (submit → Dispatch start)
  *   - exec_ms        : T3 - T2 (Dispatch start → Dispatch end)
  *   - total_ms       : T3 - T1 (submit → Dispatch complete)
- * @payload { "job": "<jobClassName>", "id": "<correlationId>",
- *            "queue_wait_ms": <double>, "exec_ms": <double>,
- *            "total_ms": <double> }
+ * @payload { "job": "<jobClassName>", "queue_wait_ms": <double>,
+ *            "exec_ms": <double>, "total_ms": <double> }
+ *          Available request, connection, and app identifiers are reported through GatewayContext.
  * @usage Used by ScopedJobTimer RAII class via AGW_TRACK_JOB_LATENCY macro
  * @note This is an EVENT marker (RecordEvent) not a metric (RecordMetric) because
  *       per-job latency has forensic value as individual occurrences; aggregation

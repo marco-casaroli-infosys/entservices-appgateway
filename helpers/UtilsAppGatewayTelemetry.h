@@ -51,6 +51,7 @@
 
 #include <interfaces/IAppGateway.h>
 #include <chrono>
+#include <mutex>
 #include "UtilsLogging.h"
 #include "UtilsCallsign.h"
 #include "AppGatewayTelemetryMarkers.h"
@@ -118,10 +119,14 @@ namespace AppGatewayTelemetryHelper {
                 return false;
             }
 
+            std::lock_guard<std::mutex> lock(mMutex);
+            if (nullptr != mTelemetry) {
+                mTelemetry->Release();
+                mTelemetry = nullptr;
+            }
+
             mService = service;
             mPluginName = pluginName;
-
-            // Query for the AppGateway telemetry interface
             mTelemetry = service->QueryInterfaceByCallsign<Exchange::IAppGatewayTelemetry>(APP_GATEWAY_CALLSIGN);
             if (nullptr == mTelemetry) {
                 LOGWARN("TelemetryClient: AppGateway telemetry interface not available: %s", pluginName.c_str());
@@ -137,6 +142,7 @@ namespace AppGatewayTelemetryHelper {
          */
         void Deinitialize()
         {
+            std::lock_guard<std::mutex> lock(mMutex);
             if (nullptr != mTelemetry) {
                 mTelemetry->Release();
                 mTelemetry = nullptr;
@@ -151,14 +157,12 @@ namespace AppGatewayTelemetryHelper {
          */
         bool IsAvailable() const
         {
-            if (nullptr == mService) {
+            Exchange::IAppGatewayTelemetry* telemetry = AcquireTelemetry();
+            if (nullptr == telemetry) {
                 return false;
             }
-
-            if (nullptr == mTelemetry) {
-                mTelemetry = mService->QueryInterfaceByCallsign<Exchange::IAppGatewayTelemetry>(APP_GATEWAY_CALLSIGN);
-            }
-            return nullptr != mTelemetry;
+            telemetry->Release();
+            return true;
         }
 
         /**
@@ -172,11 +176,14 @@ namespace AppGatewayTelemetryHelper {
                                   const std::string& eventName, 
                                   const std::string& eventData)
         {
-            if (!IsAvailable()) {
+            Exchange::IAppGatewayTelemetry* telemetry = AcquireTelemetry();
+            if (nullptr == telemetry) {
                 return Core::ERROR_UNAVAILABLE;
             }
 
-            return mTelemetry->RecordTelemetryEvent(context, eventName, eventData);
+            Core::hresult result = telemetry->RecordTelemetryEvent(context, eventName, eventData);
+            telemetry->Release();
+            return result;
         }
 
         /**
@@ -192,11 +199,14 @@ namespace AppGatewayTelemetryHelper {
                                    double value, 
                                    const std::string& unit)
         {
-            if (!IsAvailable()) {
+            Exchange::IAppGatewayTelemetry* telemetry = AcquireTelemetry();
+            if (nullptr == telemetry) {
                 return Core::ERROR_UNAVAILABLE;
             }
 
-            return mTelemetry->RecordTelemetryMetric(context, metricName, value, unit);
+            Core::hresult result = telemetry->RecordTelemetryMetric(context, metricName, value, unit);
+            telemetry->Release();
+            return result;
         }
 
         /**
@@ -327,14 +337,7 @@ namespace AppGatewayTelemetryHelper {
          */
         Core::hresult TrackResponsePayload(const Exchange::GatewayContext& context, const std::string& payload)
         {
-            if (!IsAvailable()) {
-                return Core::ERROR_UNAVAILABLE;
-            }
-
-            // Send to AppGateway for parsing and tracking
-            return mTelemetry->RecordTelemetryEvent(context,
-                                                     AGW_MARKER_RESPONSE_PAYLOAD_TRACKING,
-                                                     payload);
+            return RecordEvent(context, AGW_MARKER_RESPONSE_PAYLOAD_TRACKING, payload);
         }
 
         /**
@@ -347,8 +350,24 @@ namespace AppGatewayTelemetryHelper {
         }
 
     private:
+        Exchange::IAppGatewayTelemetry* AcquireTelemetry() const
+        {
+            std::lock_guard<std::mutex> lock(mMutex);
+            if (nullptr == mService) {
+                return nullptr;
+            }
+            if (nullptr == mTelemetry) {
+                mTelemetry = mService->QueryInterfaceByCallsign<Exchange::IAppGatewayTelemetry>(APP_GATEWAY_CALLSIGN);
+            }
+            if (nullptr != mTelemetry) {
+                mTelemetry->AddRef();
+            }
+            return mTelemetry;
+        }
+
+        mutable std::mutex mMutex;
         PluginHost::IShell* mService;
-        mutable Exchange::IAppGatewayTelemetry* mTelemetry;  // mutable for lazy initialization in IsAvailable()
+        mutable Exchange::IAppGatewayTelemetry* mTelemetry;
         std::string mPluginName;
     };
 
@@ -550,8 +569,9 @@ namespace AppGatewayTelemetryHelper {
      *
      * @param client        Telemetry client (from AGW_TELEMETRY_CLIENT_ACCESSOR())
      * @param jobName       Job class name — label only, e.g. "WsMsgJob"
-     * @param correlationId Any identity string from the job's own fields
-     *                      (e.g. requestId, appId, method) — label only
+     * @param requestId     Real request ID, or 0 if unavailable
+     * @param connectionId  Real connection ID, or 0 if unavailable
+     * @param appId         Real application ID, or "" if unavailable
      * @param submitTime    mSubmitTime captured in the job's constructor (T1)
      *
      * @note Used exclusively via the AGW_TRACK_JOB_LATENCY macro.
@@ -561,14 +581,19 @@ namespace AppGatewayTelemetryHelper {
     public:
         ScopedJobTimer(TelemetryClient* client,
                        const std::string& jobName,
-                       const std::string& correlationId,
+                       uint32_t requestId,
+                       uint32_t connectionId,
+                       const std::string& appId,
                        const std::chrono::steady_clock::time_point& submitTime)
             : mClient(client)
-            , mJobName(jobName)           // payload label only
-            , mCorrelationId(correlationId) // payload label only
+            , mJobName(jobName)
+            , mContext()
             , mSubmitTime(submitTime)
             , mDispatchStartTime(std::chrono::steady_clock::now())  // T2
         {
+            mContext.requestId = requestId;
+            mContext.connectionId = connectionId;
+            mContext.appId = appId;
         }
 
         ~ScopedJobTimer()  // fires at end of Dispatch() scope → T3
@@ -588,8 +613,7 @@ namespace AppGatewayTelemetryHelper {
             double totalMs     = toMs(endTime - mSubmitTime);             // T3 - T1
 
             JsonObject data;
-            data["job"]           = mJobName;          // which job class
-            data["id"]            = mCorrelationId;    // which invocation (human label)
+            data["job"]           = mJobName;
             data["queue_wait_ms"] = queueWaitMs;
             data["exec_ms"]       = execMs;
             data["total_ms"]      = totalMs;
@@ -597,18 +621,13 @@ namespace AppGatewayTelemetryHelper {
             std::string payload;
             data.ToString(payload);
 
-            Exchange::GatewayContext ctx;
-            ctx.requestId    = 0;
-            ctx.connectionId = 0;
-            ctx.appId        = mJobName;
-
-            mClient->RecordEvent(ctx, AGW_MARKER_JOB_TIMING, payload);
+            mClient->RecordEvent(mContext, AGW_MARKER_JOB_TIMING, payload);
         }
 
     private:
         TelemetryClient* mClient;
-        std::string mJobName;                                      // payload label
-        std::string mCorrelationId;                                // payload label
+        std::string mJobName;
+        Exchange::GatewayContext mContext;
         std::chrono::steady_clock::time_point mSubmitTime;         // T1 (from job ctor)
         std::chrono::steady_clock::time_point mDispatchStartTime;  // T2 (captured in ctor above)
     };
@@ -619,20 +638,19 @@ namespace AppGatewayTelemetryHelper {
 
 #define AGW_TELEMETRY_JOIN_IMPL(a, b) a##b
 #define AGW_TELEMETRY_JOIN(a, b) AGW_TELEMETRY_JOIN_IMPL(a, b)
-#define AGW_TELEMETRY_CLIENT_ACCESSOR AGW_TELEMETRY_JOIN(GetTelemetryClient_, MODULE_NAME)
-#define AGW_TELEMETRY_PLUGIN_NAME AGW_TELEMETRY_JOIN(GetTelemetryPluginName_, MODULE_NAME)
+#define AGW_TELEMETRY_CLIENT_ACCESSOR_NAME AGW_TELEMETRY_JOIN(GetTelemetryClient_, MODULE_NAME)
+#define AGW_TELEMETRY_PLUGIN_NAME_ACCESSOR_NAME AGW_TELEMETRY_JOIN(GetTelemetryPluginName_, MODULE_NAME)
+#define AGW_TELEMETRY_CLIENT_ACCESSOR() WPEFramework::Plugin::AppGatewayTelemetryHelper::AGW_TELEMETRY_CLIENT_ACCESSOR_NAME()
+#define AGW_TELEMETRY_PLUGIN_NAME() WPEFramework::Plugin::AppGatewayTelemetryHelper::AGW_TELEMETRY_PLUGIN_NAME_ACCESSOR_NAME()
 
 namespace WPEFramework {
 namespace Plugin {
 namespace AppGatewayTelemetryHelper {
-TelemetryClient& AGW_TELEMETRY_CLIENT_ACCESSOR();
-const char* AGW_TELEMETRY_PLUGIN_NAME();
+TelemetryClient& AGW_TELEMETRY_CLIENT_ACCESSOR_NAME();
+const char* AGW_TELEMETRY_PLUGIN_NAME_ACCESSOR_NAME();
 }
 }
 }
-
-using WPEFramework::Plugin::AppGatewayTelemetryHelper::AGW_TELEMETRY_CLIENT_ACCESSOR;
-using WPEFramework::Plugin::AppGatewayTelemetryHelper::AGW_TELEMETRY_PLUGIN_NAME;
 
 //=============================================================================
 // TELEMETRY REPORTING MACROS
@@ -696,11 +714,11 @@ using WPEFramework::Plugin::AppGatewayTelemetryHelper::AGW_TELEMETRY_PLUGIN_NAME
     namespace WPEFramework { \
     namespace Plugin { \
     namespace AppGatewayTelemetryHelper { \
-        TelemetryClient& AGW_TELEMETRY_CLIENT_ACCESSOR() { \
+        TelemetryClient& AGW_TELEMETRY_CLIENT_ACCESSOR_NAME() { \
             static TelemetryClient instance; \
             return instance; \
         } \
-        const char* AGW_TELEMETRY_PLUGIN_NAME() { \
+        const char* AGW_TELEMETRY_PLUGIN_NAME_ACCESSOR_NAME() { \
             return pluginName; \
         } \
     } \
@@ -991,9 +1009,9 @@ using WPEFramework::Plugin::AppGatewayTelemetryHelper::AGW_TELEMETRY_PLUGIN_NAME
  *                       e.g., "WsMsgJob[" + mMethod + "]"
  *                            "SubscriberJob[subscribe:" + mEvent + "]"
  *                            "ConnectionStatusNotificationJob[" + (mConnected?"connect":"disconnect") + "]"
- * @param correlationId  Any string from the job's own fields — payload label only
- *                       (e.g., std::to_string(mRequestId), mAppId, mMethod)
- *                       Pass "" if no natural identity field exists.
+ * @param requestId      Real request ID, or 0 if unavailable
+ * @param connectionId   Real connection ID, or 0 if unavailable
+ * @param appId          Real application ID, or "" if unavailable
  *
  * Place at the VERY FIRST LINE of the job's Dispatch() body.
  * ScopedJobTimer constructor captures T2 (Dispatch start).
@@ -1004,13 +1022,13 @@ using WPEFramework::Plugin::AppGatewayTelemetryHelper::AGW_TELEMETRY_PLUGIN_NAME
  *   void Dispatch() override {
  *       AGW_TRACK_JOB_LATENCY(timer,
  *           "WsMsgJob[" + mMethod + "]",
- *           std::to_string(mRequestId) + ":" + std::to_string(mConnectionId));
+ *           mRequestId, mConnectionId, "");
  *       mParent.DispatchWsMsg(mMethod, mParams, mRequestId, mConnectionId);
  *   }  // ← timer destructs here, T3 captured, telemetry emitted
  */
-#define AGW_TRACK_JOB_LATENCY(varName, jobName, correlationId)                         \
+#define AGW_TRACK_JOB_LATENCY(varName, jobName, requestId, connectionId, appId)         \
     WPEFramework::Plugin::AppGatewayTelemetryHelper::ScopedJobTimer varName(           \
-        &WPEFramework::Plugin::AppGatewayTelemetryHelper::AGW_TELEMETRY_CLIENT_ACCESSOR(), jobName, correlationId, mSubmitTime)
+        &AGW_TELEMETRY_CLIENT_ACCESSOR(), jobName, requestId, connectionId, appId, mSubmitTime)
 
 //=============================================================================
 // 8. GENERIC TELEMETRY REPORTING MACROS (Low-level Interface)
