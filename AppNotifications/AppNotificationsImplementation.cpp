@@ -36,6 +36,7 @@ namespace WPEFramework
         SERVICE_REGISTRATION(AppNotificationsImplementation, 1, 0);
 
         AppNotificationsImplementation::AppNotificationsImplementation() : 
+        mStopping(false),
         mShell(nullptr),
         mSubMap(*this),
         mThunderManager(*this),
@@ -45,7 +46,17 @@ namespace WPEFramework
 
         AppNotificationsImplementation::~AppNotificationsImplementation()
         {
-            // Cleanup resources if needed
+            Stop();
+        }
+
+        void AppNotificationsImplementation::Stop()
+        {
+            if (mStopping) {
+                return;
+            }
+
+            mStopping = true;
+
             if (mShell != nullptr)
             {
                 mShell->Release();
@@ -57,9 +68,18 @@ namespace WPEFramework
                                             bool listen /* @in */,
                                             const string &module /* @in */,
                                             const string &event /* @in */) {
+            if (mStopping) {
+                return Core::ERROR_ILLEGAL_STATE;
+            }
             LOGTRACE("Subscribe [requestId=%d appId=%s connectionId=%d] register=%s, module=%s, event=%s, version=%s",
                     context.requestId, context.appId.c_str(), context.connectionId,
                     listen ? "true" : "false", module.c_str(), event.c_str(), context.version.c_str());
+
+            if (module.empty())
+            {
+                LOGERR("module parameter cannot be empty!");
+                return Core::ERROR_INVALID_PARAMETER;
+            }
             if (listen) {
                 if (!mSubMap.Exists(event)) {
                     // Thunder subscription
@@ -81,6 +101,10 @@ namespace WPEFramework
         Core::hresult AppNotificationsImplementation::Emit(const string &event /* @in */,
                                     const string &payload /* @in @opaque */,
                                     const string &appId /* @in */) {
+            if (mStopping) {
+                return Core::ERROR_ILLEGAL_STATE;
+            }
+
             LOGTRACE("Emit [event= %s payload=%s appId=%s]",
                     event.c_str(), payload.c_str(), appId.c_str());
             Core::IWorkerPool::Instance().Submit(EmitJob::Create(this, event, payload, appId));
@@ -88,6 +112,10 @@ namespace WPEFramework
         }
 
         Core::hresult AppNotificationsImplementation::Cleanup(const uint32_t connectionId /* @in */, const string &origin /* @in */) {
+            if (mStopping) {
+                return Core::ERROR_NONE;
+            }
+
             LOGTRACE("Cleanup [connectionId=%d origin=%s]", connectionId, origin.c_str());
             mSubMap.CleanupNotifications(connectionId, origin);
             return Core::ERROR_NONE;
@@ -155,7 +183,10 @@ namespace WPEFramework
             return it != mSubscribers.end();
         }
 
-        void AppNotificationsImplementation::SubscriberMap::EventUpdate(const string& key, const string& payloadStr, const string& appId ) {                
+        void AppNotificationsImplementation::SubscriberMap::EventUpdate(const string& key, const string& payloadStr, const string& appId ) {
+            if (mParent.mStopping) {
+                return;
+            }
 
             std::lock_guard<std::mutex> lock(mSubscriberMutex);
             string lowerKey = StringUtils::toLower(key);
@@ -262,6 +293,10 @@ namespace WPEFramework
         }
 
         bool AppNotificationsImplementation::ThunderSubscriptionManager::HandleNotifier(const string& module, const string& event, const bool& listen) {
+            if (mParent.mStopping) {
+                return false;
+            }
+
             // Check if Plugins is activated before making a request
             bool status = false;
             Exchange::IAppNotificationHandler *internalNotifier = mParent.mShell->QueryInterfaceByCallsign<Exchange::IAppNotificationHandler>(module);

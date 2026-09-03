@@ -69,6 +69,7 @@ namespace Plugin {
         ASSERT(mAppGateway == nullptr);
         ASSERT(mResponder == nullptr);
         ASSERT(mTelemetry == nullptr);
+        SYSLOG(Logging::Startup, (_T("AppGateway::Initialize: PID=%u"), getpid()));
 
         LOGINFO("AppGateway::Initialize: PID=%u", getpid());
         // Measure bootstrap time
@@ -110,6 +111,7 @@ namespace Plugin {
         }
         else
         {
+            SYSLOG(Logging::Startup, (_T("AppGateway::Initialize failed!")));
             LOGERR("Failed to initialise AppGatewayResponder plugin!");
         }
    
@@ -129,6 +131,7 @@ namespace Plugin {
 
     /* virtual */ void AppGateway::Deinitialize(PluginHost::IShell* service)
     {
+        SYSLOG(Logging::Shutdown, (string(_T("AppGateway::Deinitialize"))));
         ASSERT(service == mService);
 
         RPC::IRemoteConnection *connection = nullptr;
@@ -181,6 +184,7 @@ namespace Plugin {
         mConnectionId = 0;
         mService->Release();
         mService = nullptr;
+        SYSLOG(Logging::Shutdown, (string(_T("AppGateway::Deinitialize"))));
     }
 
     void AppGateway::Deactivated(RPC::IRemoteConnection* connection)

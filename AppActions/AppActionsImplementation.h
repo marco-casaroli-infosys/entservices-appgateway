@@ -89,9 +89,10 @@ class AppActionsImplementation :
             const string mHandlerAppId;
         };
 
-        PluginHost::IShell *mService;
-        std::list<Exchange::IAppActions::INotification*> mAppActionsNotifications;
-        mutable std::mutex mAdminLock;
+        private:
+            PluginHost::IShell *mService;
+            std::list<Exchange::IAppActions::INotification*> mAppActionsNotifications;
+            mutable std::mutex mAdminLock;
     };
 
 } // namespace Plugin

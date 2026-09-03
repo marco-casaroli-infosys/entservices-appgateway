@@ -30,17 +30,15 @@
 #include <core/StreamJSON.h>
 
 #define DEFAULT_SOCKET_ADDRESS "127.0.0.1"
+#define QUEUE_BUFFER_SIZE 10
+#define WEBSOCKET_SERVER_PORT 8096
+
 using namespace WPEFramework;
 
 class WebSocketConnectionManager
 {
 public:
-    ~WebSocketConnectionManager() {
-        if (mChannel) {
-            delete mChannel;
-            mChannel = nullptr;
-        }
-    }
+    ~WebSocketConnectionManager() = default;
     class Config : public Core::JSON::Container
     {
     public:
@@ -105,10 +103,10 @@ public:
                   false, false, false,
                   connector,
                   remoteNode.AnyInterface(),
-                  8096, 8096),
+                  WEBSOCKET_SERVER_PORT, WEBSOCKET_SERVER_PORT),
         _id(0),
         _parent(static_cast<WebSocketConnectionManager::WebSocketChannel &>(*parent)),
-        _queue(10){
+        _queue(QUEUE_BUFFER_SIZE){
             LOGTRACE("Connector value: %d", static_cast<int>(connector));
             LOGTRACE("Remote host: %s", remoteNode.HostAddress().c_str()); 
         }
@@ -309,7 +307,7 @@ public:
         // New Method add message to the _queue
         void AddToPending(Core::ProxyType<Core::JSONRPC::Message>& element)
         {
-            _qLock.Lock();
+            std::lock_guard<std::mutex> lock(_qLock);
             if (_queue.Count() == 10 ) {
                 LOGERR("Queue full for %d processing error for first entry", _id);
                 // Remove the first entry
@@ -321,14 +319,12 @@ public:
             //
             _queue.Add(element);
             LOGTRACE("Message queued for connectionId: %d, queue size: %d", _id, static_cast<int>(_queue.Count()));
-
-             _qLock.Unlock();
         }
 
     private:
         uint32_t _id;
         WebSocketChannel &_parent;
-        Core::CriticalSection _qLock;
+        mutable Core::CriticalSection _qLock;
         Core::ProxyList<Core::JSONRPC::Message> _queue;
     };
 
@@ -559,7 +555,7 @@ public:
     {
         try
         {
-            mChannel = new WebSocketChannel(remoteNode, *this);
+            mChannel = std::make_unique<WebSocketChannel>(remoteNode, *this);
 
             LOGINFO("WebSocket channel started successfully on %s %d", remoteNode.HostAddress().c_str(), remoteNode.PortNumber());
             return true;
@@ -567,11 +563,13 @@ public:
         catch (const std::exception &e)
         {
             LOGERR("Exception while starting WebSocket channel: %s", e.what());
+            mChannel.reset();
             return false;
         }
         catch (...)
         {
             LOGERR("Unknown exception while starting WebSocket channel");
+            mChannel.reset();
             return false;
         }
     }
@@ -591,6 +589,6 @@ private:
     MessageHandler _messageHandler;
     AuthHandler _authHandler;
     DisconnectHandler _disconnectHandler;
-    WebSocketChannel *mChannel = nullptr;
+    std::unique_ptr<WebSocketChannel> mChannel;
     uint32_t _automationId = 0;
 };

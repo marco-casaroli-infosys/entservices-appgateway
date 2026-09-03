@@ -586,6 +586,183 @@ namespace Plugin {
          */
         std::string FormatTelemetryPayload(const JsonObject& jsonPayload);
 
+        static JsonObject BuildApiMethodStatsPayload(const ApiMethodStats& stats,
+                                                    const uint32_t reportingIntervalSec)
+        {
+            JsonObject payload;
+            payload["plugin_name"] = stats.pluginName;
+            payload["method_name"] = stats.methodName;
+            payload["reporting_interval_sec"] = reportingIntervalSec;
+
+            if (stats.successCount > 0) {
+                const double avgSuccessLatency = stats.totalSuccessLatencyMs / stats.successCount;
+                const double minSuccess = (stats.minSuccessLatencyMs == std::numeric_limits<double>::max())
+                    ? 0.0 : stats.minSuccessLatencyMs;
+                const double maxSuccess = (stats.maxSuccessLatencyMs == std::numeric_limits<double>::lowest())
+                    ? 0.0 : stats.maxSuccessLatencyMs;
+
+                payload["success_count"] = stats.successCount;
+                payload["success_latency_min_ms"] = minSuccess;
+                payload["success_latency_max_ms"] = maxSuccess;
+                payload["success_latency_avg_ms"] = avgSuccessLatency;
+            } else {
+                payload["success_count"] = 0;
+            }
+
+            if (stats.errorCount > 0) {
+                const double avgErrorLatency = stats.totalErrorLatencyMs / stats.errorCount;
+                const double minError = (stats.minErrorLatencyMs == std::numeric_limits<double>::max())
+                    ? 0.0 : stats.minErrorLatencyMs;
+                const double maxError = (stats.maxErrorLatencyMs == std::numeric_limits<double>::lowest())
+                    ? 0.0 : stats.maxErrorLatencyMs;
+
+                payload["error_count"] = stats.errorCount;
+                payload["error_latency_min_ms"] = minError;
+                payload["error_latency_max_ms"] = maxError;
+                payload["error_latency_avg_ms"] = avgErrorLatency;
+            } else {
+                payload["error_count"] = 0;
+            }
+
+            payload["total_count"] = stats.successCount + stats.errorCount;
+            return payload;
+        }
+
+        static JsonObject BuildServiceMethodStatsPayload(const ServiceMethodStats& stats,
+                                                        const uint32_t reportingIntervalSec)
+        {
+            JsonObject payload;
+            payload["plugin_name"] = stats.pluginName;
+            payload["service_name"] = stats.serviceName;
+            payload["reporting_interval_sec"] = reportingIntervalSec;
+
+            if (stats.successCount > 0) {
+                const double avgSuccessLatency = stats.totalSuccessLatencyMs / stats.successCount;
+                const double minSuccess = (stats.minSuccessLatencyMs == std::numeric_limits<double>::max())
+                    ? 0.0 : stats.minSuccessLatencyMs;
+                const double maxSuccess = (stats.maxSuccessLatencyMs == std::numeric_limits<double>::lowest())
+                    ? 0.0 : stats.maxSuccessLatencyMs;
+
+                payload["success_count"] = stats.successCount;
+                payload["success_latency_avg_ms"] = avgSuccessLatency;
+                payload["success_latency_min_ms"] = minSuccess;
+                payload["success_latency_max_ms"] = maxSuccess;
+            } else {
+                payload["success_count"] = 0;
+            }
+
+            if (stats.errorCount > 0) {
+                const double avgErrorLatency = stats.totalErrorLatencyMs / stats.errorCount;
+                const double minError = (stats.minErrorLatencyMs == std::numeric_limits<double>::max())
+                    ? 0.0 : stats.minErrorLatencyMs;
+                const double maxError = (stats.maxErrorLatencyMs == std::numeric_limits<double>::lowest())
+                    ? 0.0 : stats.maxErrorLatencyMs;
+
+                payload["error_count"] = stats.errorCount;
+                payload["error_latency_avg_ms"] = avgErrorLatency;
+                payload["error_latency_min_ms"] = minError;
+                payload["error_latency_max_ms"] = maxError;
+            } else {
+                payload["error_count"] = 0;
+            }
+
+            payload["total_count"] = stats.successCount + stats.errorCount;
+            return payload;
+        }
+
+        static JsonObject BuildServiceLatencyStatsPayload(const ServiceLatencyStats& stats,
+                                                         const uint32_t reportingIntervalSec)
+        {
+            JsonObject payload;
+            payload["plugin_name"] = stats.pluginName;
+            payload["service_name"] = stats.serviceName;
+            payload["reporting_interval_sec"] = reportingIntervalSec;
+            payload["count"] = stats.count;
+
+            const double avgLatency = stats.totalLatencyMs / stats.count;
+            const double minLatency = (stats.minLatencyMs == std::numeric_limits<double>::max())
+                ? 0.0 : stats.minLatencyMs;
+            const double maxLatency = (stats.maxLatencyMs == std::numeric_limits<double>::lowest())
+                ? 0.0 : stats.maxLatencyMs;
+
+            payload["avg_ms"] = avgLatency;
+            payload["min_ms"] = minLatency;
+            payload["max_ms"] = maxLatency;
+            payload["unit"] = AGW_UNIT_MILLISECONDS;
+            return payload;
+        }
+
+        static JsonObject BuildApiErrorMetricPayload(const std::string& apiName,
+                                                    const uint32_t count,
+                                                    const uint32_t reportingIntervalSec)
+        {
+            JsonObject payload;
+            payload["reporting_interval_sec"] = reportingIntervalSec;
+            payload["ApiName"] = apiName;
+            payload["count"] = count;
+            payload["unit"] = AGW_UNIT_COUNT;
+            return payload;
+        }
+
+        static JsonObject BuildExternalServiceErrorMetricPayload(const std::string& serviceName,
+                                                                const uint32_t count,
+                                                                const uint32_t reportingIntervalSec)
+        {
+            JsonObject payload;
+            payload["reporting_interval_sec"] = reportingIntervalSec;
+            payload["ServiceName"] = serviceName;
+            payload["count"] = count;
+            payload["unit"] = AGW_UNIT_COUNT;
+            return payload;
+        }
+
+        static JsonObject BuildAggregatedMetricPayload(const std::string& metricName,
+                                                     const MetricData& data,
+                                                     const uint32_t reportingIntervalSec)
+        {
+            const double minVal = (data.min == std::numeric_limits<double>::max()) ? 0.0 : data.min;
+            const double maxVal = (data.max == std::numeric_limits<double>::lowest()) ? 0.0 : data.max;
+            const double avgVal = data.sum / static_cast<double>(data.count);
+
+            JsonObject payload;
+            payload["min"] = minVal;
+            payload["max"] = maxVal;
+            payload["count"] = data.count;
+            payload["avg"] = avgVal;
+            payload["unit"] = data.unit;
+            payload["reporting_interval_sec"] = reportingIntervalSec;
+            (void)metricName;
+            return payload;
+        }
+
+    private:
+        static void SendHealthStatsPayload(AppGatewayTelemetry* parent,
+                                        const uint32_t reportingIntervalSec,
+                                        const uint32_t websocketConnections,
+                                        const uint32_t totalCalls,
+                                        const uint32_t totalResponses,
+                                        const uint32_t successfulCalls,
+                                        const uint32_t failedCalls,
+                                        const uint32_t pendingCount)
+        {
+            if (totalCalls == 0 && websocketConnections == 0 && pendingCount == 0) {
+                LOGINFO("No health stats to report");
+                return;
+            }
+
+            JsonObject healthPayload;
+            healthPayload["reporting_interval_sec"] = reportingIntervalSec;
+            healthPayload["websocket_connections"] = websocketConnections;
+            healthPayload["total_calls"] = totalCalls;
+            healthPayload["total_responses"] = totalResponses;
+            healthPayload["successful_calls"] = successfulCalls;
+            healthPayload["failed_calls"] = failedCalls;
+            healthPayload["unit"] = AGW_UNIT_COUNT;
+
+            Exchange::GatewayContext sysContext = AppGatewayTelemetry::CreateSystemContext();
+            parent->SendT2Event(AGW_MARKER_HEALTH_STATS, healthPayload, sysContext);
+        }
+
     private:
         mutable Core::CriticalSection mAdminLock;
         PluginHost::IShell* mService;

@@ -247,8 +247,8 @@ namespace WPEFramework
             Core::hresult result = thunderLink->Invoke<std::string, std::string>(pluginMethod, params, response);
             if (result != Core::ERROR_NONE)
             {
-                LOGERR("Invoke failed for %s.%s, error code: %u",
-                       callsign.c_str(), pluginMethod.c_str(), result);
+                LOGERR("Invoke failed for %s.%s, error code: %d",
+                       callsign.c_str(), pluginMethod.c_str(), static_cast<int>(result));
             }
             return result;
         }

@@ -134,6 +134,7 @@ namespace Plugin {
     public:
         AppNotificationsImplementation();
         ~AppNotificationsImplementation();
+        void Stop();
 
         BEGIN_INTERFACE_MAP(AppNotificationsImplementation)
         INTERFACE_ENTRY(Exchange::IAppNotifications)
@@ -246,6 +247,7 @@ namespace Plugin {
         };
 
     private:
+        bool mStopping;
         PluginHost::IShell* mShell;
         SubscriberMap mSubMap;
         ThunderSubscriptionManager mThunderManager;
