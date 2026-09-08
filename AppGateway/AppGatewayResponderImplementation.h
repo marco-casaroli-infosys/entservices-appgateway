@@ -74,7 +74,8 @@ namespace Plugin {
         uint32_t Configure(PluginHost::IShell* service) override;
 
     private:
-        class EXTERNAL WsMsgJob : public Core::IDispatch
+        class EXTERNAL WsMsgJob : public Core::IDispatch,
+                                  public AppGatewayTelemetryHelper::JobTiming
         {
         protected:
             WsMsgJob(AppGatewayResponderImplementation *parent, 
@@ -82,8 +83,7 @@ namespace Plugin {
             const std::string& params,
             const uint32_t requestId,
             const uint32_t connectionId)
-                : mParent(*parent), mMethod(method), mParams(params), mRequestId(requestId), mConnectionId(connectionId),
-                  AGW_JOB_CAPTURE_SUBMIT_TIME()
+                : mParent(*parent), mMethod(method), mParams(params), mRequestId(requestId), mConnectionId(connectionId)
             {
                 mParent.AddRef();
             }
@@ -106,7 +106,7 @@ namespace Plugin {
             }
             virtual void Dispatch()
             {
-                AGW_TRACK_JOB_LATENCY(timer, "WsMsgJob[" + mMethod + "]",
+                AGW_TIME_JOB(timer, "WsMsgJob[" + mMethod + "]",
                     mRequestId, mConnectionId, "");
                 mParent.DispatchWsMsg(mMethod, mParams, mRequestId, mConnectionId);
             }
@@ -117,10 +117,10 @@ namespace Plugin {
             const std::string mParams;
             const uint32_t mRequestId;
             const uint32_t mConnectionId;
-            std::chrono::steady_clock::time_point mSubmitTime;
         };
 
-        class EXTERNAL RespondJob : public Core::IDispatch
+        class EXTERNAL RespondJob : public Core::IDispatch,
+                                    public AppGatewayTelemetryHelper::JobTiming
         {
         protected:
             RespondJob(AppGatewayResponderImplementation *parent, 
@@ -128,8 +128,7 @@ namespace Plugin {
             const uint32_t requestId,
             const std::string& payload
             )
-                : mParent(*parent), mPayload(payload), mRequestId(requestId), mConnectionId(connectionId),
-                  AGW_JOB_CAPTURE_SUBMIT_TIME()
+                : mParent(*parent), mPayload(payload), mRequestId(requestId), mConnectionId(connectionId)
             {
                 mParent.AddRef();
             }
@@ -151,7 +150,7 @@ namespace Plugin {
             }
             virtual void Dispatch()
             {
-                AGW_TRACK_JOB_LATENCY(timer, "RespondJob", 
+                AGW_TIME_JOB(timer, "RespondJob", 
                     mRequestId, mConnectionId, "");
                 mParent.ReturnMessageInSocket(mConnectionId, mRequestId, mPayload);                
             }
@@ -161,10 +160,10 @@ namespace Plugin {
             const std::string mPayload;
             const uint32_t mRequestId;
             const uint32_t mConnectionId;
-            std::chrono::steady_clock::time_point mSubmitTime;
         };
 
-          class EXTERNAL EmitJob : public Core::IDispatch
+          class EXTERNAL EmitJob : public Core::IDispatch,
+                                  public AppGatewayTelemetryHelper::JobTiming
         {
         protected:
             EmitJob(AppGatewayResponderImplementation *parent, 
@@ -172,8 +171,7 @@ namespace Plugin {
             const std::string& designator,
             const std::string& payload
             )
-                : mParent(*parent), mPayload(payload), mDesignator(designator), mConnectionId(connectionId),
-                  AGW_JOB_CAPTURE_SUBMIT_TIME()
+                : mParent(*parent), mPayload(payload), mDesignator(designator), mConnectionId(connectionId)
             {
                 mParent.AddRef();
             }
@@ -195,7 +193,7 @@ namespace Plugin {
             }
             virtual void Dispatch()
             {
-                AGW_TRACK_JOB_LATENCY(timer, "EmitJob[" + mDesignator + "]",
+                AGW_TIME_JOB(timer, "EmitJob[" + mDesignator + "]",
                     0, mConnectionId, "");
                 mParent.mWsManager.DispatchNotificationToConnection(mConnectionId, mDesignator, mPayload);
             }
@@ -205,10 +203,10 @@ namespace Plugin {
             const std::string mPayload;
             const std::string mDesignator;
             const uint32_t mConnectionId;
-            std::chrono::steady_clock::time_point mSubmitTime;
         };
 
-        class EXTERNAL RequestJob : public Core::IDispatch
+        class EXTERNAL RequestJob : public Core::IDispatch,
+                                    public AppGatewayTelemetryHelper::JobTiming
         {
         protected:
             RequestJob(AppGatewayResponderImplementation *parent, 
@@ -217,8 +215,7 @@ namespace Plugin {
             const std::string& designator,
             const std::string& payload
             )
-                : mParent(*parent), mPayload(payload), mDesignator(designator), mConnectionId(connectionId), mRequestId(requestId),
-                  AGW_JOB_CAPTURE_SUBMIT_TIME()
+                : mParent(*parent), mPayload(payload), mDesignator(designator), mConnectionId(connectionId), mRequestId(requestId)
             {
                 mParent.AddRef();
             }
@@ -240,7 +237,7 @@ namespace Plugin {
             }
             virtual void Dispatch()
             {
-                AGW_TRACK_JOB_LATENCY(timer, "RequestJob[" + mDesignator + "]",
+                AGW_TIME_JOB(timer, "RequestJob[" + mDesignator + "]",
                     mRequestId, mConnectionId, "");
                 mParent.mWsManager.SendRequestToConnection(mConnectionId, mDesignator, mRequestId, mPayload);
             }
@@ -251,10 +248,10 @@ namespace Plugin {
             const std::string mDesignator;
             const uint32_t mConnectionId;
             const uint32_t mRequestId;
-            std::chrono::steady_clock::time_point mSubmitTime;
         };
 
-        class EXTERNAL ConnectionStatusNotificationJob : public Core::IDispatch
+        class EXTERNAL ConnectionStatusNotificationJob : public Core::IDispatch,
+                                                         public AppGatewayTelemetryHelper::JobTiming
         {
         protected:
             ConnectionStatusNotificationJob(AppGatewayResponderImplementation *parent,
@@ -262,8 +259,7 @@ namespace Plugin {
             const std::string& appId,
             const bool connected
             )
-                : mParent(*parent), mConnectionId(connectionId), mAppId(appId), mConnected(connected),
-                  AGW_JOB_CAPTURE_SUBMIT_TIME()
+                : mParent(*parent), mConnectionId(connectionId), mAppId(appId), mConnected(connected)
             {
                 mParent.AddRef();
             }
@@ -285,7 +281,7 @@ namespace Plugin {
             }
             virtual void Dispatch()
             {
-                AGW_TRACK_JOB_LATENCY(timer, "ConnStatusJob[" + std::string(mConnected?"connect":"disconnect") + "]",
+                AGW_TIME_JOB(timer, "ConnStatusJob[" + std::string(mConnected?"connect":"disconnect") + "]",
                     0, mConnectionId, mAppId);
                 mParent.OnConnectionStatusChanged(mAppId, mConnectionId, mConnected);
             }
@@ -295,7 +291,6 @@ namespace Plugin {
             const uint32_t mConnectionId;
             const std::string mAppId;
             const bool mConnected;
-            std::chrono::steady_clock::time_point mSubmitTime;
         };
 
 

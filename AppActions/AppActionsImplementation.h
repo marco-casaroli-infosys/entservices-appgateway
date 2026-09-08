@@ -55,12 +55,12 @@ class AppActionsImplementation :
 
     private:
 
-        class EXTERNAL NotifyJob : public Core::IDispatch
+        class EXTERNAL NotifyJob : public Core::IDispatch,
+                                   public AppGatewayTelemetryHelper::JobTiming
         {
         public:
             NotifyJob(AppActionsImplementation* parent, const string& initiator, const string& intent, const string& handlerAppId)
-                : mParent(*parent), mInitiator(initiator), mIntent(intent), mHandlerAppId(handlerAppId),
-                  AGW_JOB_CAPTURE_SUBMIT_TIME()
+                : mParent(*parent), mInitiator(initiator), mIntent(intent), mHandlerAppId(handlerAppId)
             {
                 mParent.AddRef();
             }
@@ -81,7 +81,7 @@ class AppActionsImplementation :
 
             void Dispatch() override
             {
-                AGW_TRACK_JOB_LATENCY(timer, "NotifyJob[" + mIntent + "]",
+                AGW_TIME_JOB(timer, "NotifyJob[" + mIntent + "]",
                     0, 0, mHandlerAppId);
                 mParent.DispatchActionStartRequest(mInitiator, mIntent, mHandlerAppId);
             }
@@ -91,7 +91,6 @@ class AppActionsImplementation :
             const string mInitiator;
             const string mIntent;
             const string mHandlerAppId;
-            std::chrono::steady_clock::time_point mSubmitTime;
         };
 
         PluginHost::IShell *mService;

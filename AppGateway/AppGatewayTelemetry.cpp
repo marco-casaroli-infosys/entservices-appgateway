@@ -362,7 +362,7 @@ namespace Plugin {
             }
             LOGINFO("Sending job timing event to T2: job=%s, timing=%s", jobName.c_str(), eventData.c_str());
             SendT2Event(eventName.c_str(), eventData, context);
-            isImmediateEvent = true;
+            return Core::ERROR_NONE;
         }
 
         // Immediate JSON-wrapped events: each entry names the JSON field to extract,

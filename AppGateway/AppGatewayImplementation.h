@@ -59,7 +59,8 @@ namespace Plugin {
 
     private:
 
-        class EXTERNAL RespondJob : public Core::IDispatch
+        class EXTERNAL RespondJob : public Core::IDispatch,
+                                    public AppGatewayTelemetryHelper::JobTiming
         {
         protected:
             RespondJob(AppGatewayImplementation *parent, 
@@ -67,8 +68,7 @@ namespace Plugin {
             const std::string& payload,
             const std::string& destination
             )
-                : mParent(*parent), mPayload(payload), mContext(context), mDestination(destination),
-                  AGW_JOB_CAPTURE_SUBMIT_TIME()
+                : mParent(*parent), mPayload(payload), mContext(context), mDestination(destination)
             {
                 mParent.AddRef();
             }
@@ -90,7 +90,7 @@ namespace Plugin {
             }
             virtual void Dispatch()
             {
-                AGW_TRACK_JOB_LATENCY(timer, "ImplRespondJob",
+                AGW_TIME_JOB(timer, "ImplRespondJob",
                     mContext.requestId, mContext.connectionId, mContext.appId);
                 if(ContextUtils::IsOriginGateway(mDestination)) {
                     mParent.ReturnMessageInSocket(mContext, std::move(mPayload));
@@ -105,17 +105,16 @@ namespace Plugin {
             const std::string mPayload;
             const Context mContext;
             const std::string mDestination;
-            std::chrono::steady_clock::time_point mSubmitTime;
         };
 
-        class EXTERNAL EventHookJob : public Core::IDispatch
+        class EXTERNAL EventHookJob : public Core::IDispatch,
+                                      public AppGatewayTelemetryHelper::JobTiming
         {
         protected:
             EventHookJob(AppGatewayImplementation* parent,
                 const Context& context,
                 const std::string& hookMethod)
-                : mParent(*parent), mContext(context), mHookMethod(hookMethod),
-                  AGW_JOB_CAPTURE_SUBMIT_TIME()
+                : mParent(*parent), mContext(context), mHookMethod(hookMethod)
             {
                 mParent.AddRef();
             }
@@ -141,7 +140,6 @@ namespace Plugin {
             AppGatewayImplementation& mParent;
             const Context mContext;
             const std::string mHookMethod;
-            std::chrono::steady_clock::time_point mSubmitTime;
         };
 
         Core::hresult HandleEvent(const Context &context, const string &alias, const string &event, const string &origin,  const bool listen);

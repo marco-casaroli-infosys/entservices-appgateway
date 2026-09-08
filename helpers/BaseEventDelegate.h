@@ -29,16 +29,17 @@
 #include "UtilsAppGatewayTelemetry.h"
 
 using namespace WPEFramework;
+using namespace WPEFramework::Plugin;
 
 class BaseEventDelegate
 {
 public:
-    class EXTERNAL EventDelegateDispatchJob : public Core::IDispatch
+    class EXTERNAL EventDelegateDispatchJob : public Core::IDispatch,
+                                              public AppGatewayTelemetryHelper::JobTiming
     {
     public:
         EventDelegateDispatchJob(BaseEventDelegate *delegate, const string &event, const string &payload, string appId = "")
-            : mDelegate(*delegate), mEvent(event), mPayload(payload), mAppId(std::move(appId)),
-              AGW_JOB_CAPTURE_SUBMIT_TIME() {}
+            : mDelegate(*delegate), mEvent(event), mPayload(payload), mAppId(std::move(appId)) {}
 
         EventDelegateDispatchJob() = delete;
         EventDelegateDispatchJob(const EventDelegateDispatchJob &) = delete;
@@ -55,7 +56,7 @@ public:
 
         virtual void Dispatch()
         {
-            AGW_TRACK_JOB_LATENCY(timer, "EventDispatchJob[" + mEvent + "]",
+            AGW_TIME_JOB(timer, "EventDispatchJob[" + mEvent + "]",
                 0, 0, mAppId);
             mDelegate.DispatchToAppNotifications(mEvent, mPayload, mAppId);
         }
@@ -65,7 +66,6 @@ public:
         string mEvent;
         string mPayload;
         string mAppId;
-        std::chrono::steady_clock::time_point mSubmitTime;
     };
 
     BaseEventDelegate() : mRegisteredNotifications(),

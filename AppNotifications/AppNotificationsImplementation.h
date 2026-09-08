@@ -156,12 +156,12 @@ namespace Plugin {
         // IConfiguration interface
         uint32_t Configure(PluginHost::IShell* shell);
 
-        class EXTERNAL SubscriberJob : public Core::IDispatch 
+        class EXTERNAL SubscriberJob : public Core::IDispatch,
+                                       public AppGatewayTelemetryHelper::JobTiming
         {
             public:
                 SubscriberJob(AppNotificationsImplementation* delegate, const string& module, const string& event, const bool subscribe)
-                    : mParent(*delegate), mEvent(event), mModule(module), mSubscribe(subscribe),
-                      AGW_JOB_CAPTURE_SUBMIT_TIME() {}
+                    : mParent(*delegate), mEvent(event), mModule(module), mSubscribe(subscribe) {}
 
                 SubscriberJob() = delete;
                 SubscriberJob(const SubscriberJob &) = delete;
@@ -178,7 +178,7 @@ namespace Plugin {
                 
                 virtual void Dispatch()
                 {
-                    AGW_TRACK_JOB_LATENCY(timer, "SubscriberJob[" + std::string(mSubscribe?"sub":"unsub") + ":" + mEvent + "]",
+                    AGW_TIME_JOB(timer, "SubscriberJob[" + std::string(mSubscribe?"sub":"unsub") + ":" + mEvent + "]",
                         0, 0, "");
                     if (mSubscribe) {
                         mParent.mThunderManager.Subscribe(mModule, mEvent);
@@ -192,15 +192,14 @@ namespace Plugin {
                 string mEvent;
                 string mModule;
                 bool mSubscribe;
-                std::chrono::steady_clock::time_point mSubmitTime;
         };
 
-        class EXTERNAL EmitJob : public Core::IDispatch 
+        class EXTERNAL EmitJob : public Core::IDispatch,
+                                 public AppGatewayTelemetryHelper::JobTiming
         {
             public:
                 EmitJob(AppNotificationsImplementation* delegate, const string& event, const string& payload, const string& appId)
-                    : mParent(*delegate), mEvent(event), mPayload(payload), mAppId(appId),
-                      AGW_JOB_CAPTURE_SUBMIT_TIME() {}
+                    : mParent(*delegate), mEvent(event), mPayload(payload), mAppId(appId) {}
 
                 EmitJob() = delete;
                 EmitJob(const EmitJob &) = delete;
@@ -217,7 +216,7 @@ namespace Plugin {
                 
                 virtual void Dispatch()
                 {
-                    AGW_TRACK_JOB_LATENCY(timer, "NotifEmitJob[" + mEvent + "]",
+                    AGW_TIME_JOB(timer, "NotifEmitJob[" + mEvent + "]",
                         0, 0, mAppId);
                     mParent.mSubMap.EventUpdate(mEvent, mPayload, mAppId);
                 }
@@ -227,7 +226,6 @@ namespace Plugin {
                 string mEvent;
                 string mPayload;
                 string mAppId;
-                std::chrono::steady_clock::time_point mSubmitTime;
         };
 
         class Emitter: public Exchange::IAppNotificationHandler::IEmitter {

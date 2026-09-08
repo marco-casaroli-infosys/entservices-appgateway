@@ -632,6 +632,66 @@ namespace AppGatewayTelemetryHelper {
         std::chrono::steady_clock::time_point mDispatchStartTime;  // T2 (captured in ctor above)
     };
 
+    /**
+     * @brief Optional mixin decoration that adds job-timing telemetry to any Thunder
+     *        WorkerPool job, without changing the job's inheritance from Core::IDispatch.
+     *
+     * Usage — multiply inherit alongside Core::IDispatch:
+     *
+     *   class MyJob : public Core::IDispatch,
+     *                 public WPEFramework::Plugin::AppGatewayTelemetryHelper::JobTiming
+     *   {
+     *   public:
+     *       MyJob(MyPlugin* p, std::string method, uint32_t reqId, uint32_t connId)
+     *           : mParent(*p), mMethod(std::move(method)),
+     *             mRequestId(reqId), mConnectionId(connId)
+     *       {}   // JobTiming's default ctor captures submit time (T1) automatically
+     *
+     *       void Dispatch() override {
+     *           AGW_TIME_JOB(timer, "MyJob[" + mMethod + "]", mRequestId, mConnectionId, "");
+     *           mParent.DoWork(mMethod);
+     *       }
+     *   private:
+     *       MyPlugin&   mParent;
+     *       std::string mMethod;
+     *       uint32_t    mRequestId;
+     *       uint32_t    mConnectionId;
+     *   };
+     *
+     * What the developer gets for free:
+     *   - Submit time (T1) captured in the mixin's constructor
+     *   - Dispatch start/end (T2/T3) captured by the ScopedJobTimer built by AGW_TIME_JOB
+     *   - queue_wait_ms / exec_ms / total_ms emitted to AGW_MARKER_JOB_TIMING
+     *
+     * What the developer still owns:
+     *   - The Core::IDispatch inheritance, virtual signatures, Create() factory,
+     *     member layout, and the body of Dispatch(). No inversion of control.
+     *
+     * Opt-in / opt-out:
+     *   - Jobs that don't inherit JobTiming pay zero cost.
+     *   - Jobs that inherit JobTiming but omit AGW_TIME_JOB in Dispatch() also pay
+     *     zero runtime cost beyond a single time_point member.
+     */
+    class JobTiming
+    {
+    public:
+        JobTiming()
+            : mSubmitTime(std::chrono::steady_clock::now())  // T1
+        {
+        }
+
+        // Read by AGW_TIME_JOB inside Dispatch() to build a ScopedJobTimer.
+        std::chrono::steady_clock::time_point JobSubmitTime() const
+        {
+            return mSubmitTime;
+        }
+
+    private:
+        const std::chrono::steady_clock::time_point mSubmitTime;
+    };
+
+
+
 } // namespace AppGatewayTelemetryHelper
 } // namespace Plugin
 } // namespace WPEFramework
@@ -676,7 +736,7 @@ const char* AGW_TELEMETRY_PLUGIN_NAME_ACCESSOR_NAME();
  * - Example: API latency, call counts, success rates
  * 
  * ## Macro Categories
- * 
+ *
  * 1. **Framework/Initialization**: Setup and teardown of telemetry client
  * 2. **Bootstrap Time Tracking**: Measure plugin initialization time
  * 3. **Error Reporting (Events)**: Report API and service errors
@@ -1029,6 +1089,41 @@ const char* AGW_TELEMETRY_PLUGIN_NAME_ACCESSOR_NAME();
 #define AGW_TRACK_JOB_LATENCY(varName, jobName, requestId, connectionId, appId)         \
     WPEFramework::Plugin::AppGatewayTelemetryHelper::ScopedJobTimer varName(           \
         &AGW_TELEMETRY_CLIENT_ACCESSOR(), jobName, requestId, connectionId, appId, mSubmitTime)
+
+/**
+ * @brief RAII job-timing helper for classes that inherit the JobTiming mixin.
+ *
+ * Place at the top of Dispatch(). Constructs a ScopedJobTimer bound to this
+ * plugin's telemetry client, reading the submit time captured by the
+ * JobTiming mixin's constructor. On scope exit the timer destructor emits
+ * queue_wait_ms / exec_ms / total_ms to AGW_MARKER_JOB_TIMING.
+ *
+ * The class MUST publicly inherit
+ * WPEFramework::Plugin::AppGatewayTelemetryHelper::JobTiming so that
+ * this->JobSubmitTime() is accessible.
+ *
+ * Example:
+ *   class MyJob : public Core::IDispatch,
+ *                 public WPEFramework::Plugin::AppGatewayTelemetryHelper::JobTiming
+ *   {
+ *       void Dispatch() override {
+ *           AGW_TIME_JOB(timer, "MyJob[" + mMethod + "]", mRequestId, mConnectionId, "");
+ *           // do work
+ *       }
+ *   };
+ *
+ * @param varName        C++ identifier for the RAII timer variable.
+ * @param jobName        Descriptive label emitted in the "job" telemetry field.
+ * @param requestId      Real request ID, or 0 if unavailable (omitted from payload).
+ * @param connectionId   Real connection ID, or 0 if unavailable (omitted from payload).
+ * @param appId          Real app ID, or "" if unavailable (omitted from payload).
+ */
+#define AGW_TIME_JOB(varName, jobName, requestId, connectionId, appId)                  \
+    WPEFramework::Plugin::AppGatewayTelemetryHelper::ScopedJobTimer varName(            \
+        &AGW_TELEMETRY_CLIENT_ACCESSOR(), jobName, requestId, connectionId, appId,      \
+        this->JobSubmitTime())
+
+
 
 //=============================================================================
 // 8. GENERIC TELEMETRY REPORTING MACROS (Low-level Interface)

@@ -559,7 +559,7 @@ namespace WPEFramework
 
         void AppGatewayImplementation::EventHookJob::Dispatch()
         {
-            AGW_TRACK_JOB_LATENCY(timer, "EventHookJob[" + mHookMethod + "]",
+            AGW_TIME_JOB(timer, "EventHookJob[" + mHookMethod + "]",
                 mContext.requestId, mContext.connectionId, mContext.appId);
             LOGINFO("EventHookJob: triggering hook method=%s for appId=%s",
                      mHookMethod.c_str(), mContext.appId.c_str());

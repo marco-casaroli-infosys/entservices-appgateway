@@ -45,14 +45,14 @@ namespace WPEFramework {
             AppGatewayCommon(const AppGatewayCommon&) = delete;
             AppGatewayCommon& operator=(const AppGatewayCommon&) = delete;
 
-            class EXTERNAL EventRegistrationJob : public Core::IDispatch
+            class EXTERNAL EventRegistrationJob : public Core::IDispatch,
+                                                  public AppGatewayTelemetryHelper::JobTiming
         {
             protected:
                 EventRegistrationJob(AppGatewayCommon *parent,
                 Exchange::IAppNotificationHandler::IEmitter *cb,
                 const string &event,
-                const bool listen): mParent(*parent), mCallback(cb), mEvent(event), mListen(listen),
-                  AGW_JOB_CAPTURE_SUBMIT_TIME() {
+                const bool listen): mParent(*parent), mCallback(cb), mEvent(event), mListen(listen) {
                     if (mCallback != nullptr) {
                         mCallback->AddRef();
                     }
@@ -76,7 +76,7 @@ namespace WPEFramework {
                 }
                 virtual void Dispatch()
                 {
-                    AGW_TRACK_JOB_LATENCY(timer,
+                    AGW_TIME_JOB(timer,
                         "EventRegJob[" + std::string(mListen?"sub":"unsub") + ":" + mEvent + "]", 0, 0, "");
                     mParent.mDelegate->HandleAppEventNotifier(mCallback, mEvent, mListen);
                     // fetch_sub returns the previous value; if it was 1 the
@@ -94,7 +94,6 @@ namespace WPEFramework {
             Exchange::IAppNotificationHandler::IEmitter *mCallback;
             const string mEvent;
             const bool mListen;
-            std::chrono::steady_clock::time_point mSubmitTime;
 
         };
 
