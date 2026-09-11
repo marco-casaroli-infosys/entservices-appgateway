@@ -1077,7 +1077,6 @@ namespace Plugin {
         healthPayload["failed_calls"] = failedCalls;
         healthPayload["unit"] = AGW_UNIT_COUNT;
 
-        //LOGINFO("Sending health stats to T2 (pending=%u)", pendingCount);
         LOGTRACE("Sending health stats to T2");
         Exchange::GatewayContext sysContext = CreateSystemContext();
         SendT2Event(AGW_MARKER_HEALTH_STATS, healthPayload, sysContext);
@@ -1784,7 +1783,6 @@ namespace Plugin {
         healthPayload["failed_calls"] = failedCalls;
         healthPayload["unit"] = AGW_UNIT_COUNT;
 
-        //LOGINFO("TelemetrySnapshot: Sending health stats (pending=%u)", pendingCount);
         LOGTRACE("TelemetrySnapshot: Sending health stats");
         Exchange::GatewayContext sysContext = parent->CreateSystemContext();
         parent->SendT2Event(AGW_MARKER_HEALTH_STATS, healthPayload, sysContext);
@@ -2220,12 +2218,12 @@ namespace Plugin {
             payload["max_ms"] = maxLatency;
             payload["unit"] = AGW_UNIT_MILLISECONDS;
             
-            LOGINFO("FlushJob: Sending API latency stats");
+            LOGTRACE("FlushJob: Sending API latency stats");
             Exchange::GatewayContext sysContext = AppGatewayTelemetry::CreateSystemContext();
             mSnapshot->parent->SendT2Event(AGW_MARKER_API_LATENCY, payload, sysContext);
         }
         
-        LOGINFO("FlushJob: API latency stats sent: %zu plugin/API combinations", mSnapshot->apiLatencyStats.size());
+        LOGTRACE("FlushJob: API latency stats sent: %zu plugin/API combinations", mSnapshot->apiLatencyStats.size());
     }
 
     void AppGatewayTelemetry::FlushJob::SendServiceMethodStats()
@@ -2281,12 +2279,12 @@ namespace Plugin {
             
             payload["total_count"] = stats.successCount + stats.errorCount;
             
-            LOGINFO("FlushJob: Sending service method stats");
+            LOGTRACE("FlushJob: Sending service method stats");
             Exchange::GatewayContext sysContext = AppGatewayTelemetry::CreateSystemContext();
             mSnapshot->parent->SendT2Event(AGW_MARKER_SERVICE_METHOD_STAT, payload, sysContext);
         }
         
-        LOGINFO("FlushJob: Service method stats sent: %zu plugin/service combinations", mSnapshot->serviceMethodStats.size());
+        LOGTRACE("FlushJob: Service method stats sent: %zu plugin/service combinations", mSnapshot->serviceMethodStats.size());
     }
 
     void AppGatewayTelemetry::FlushJob::SendServiceLatencyStats()
@@ -2320,12 +2318,12 @@ namespace Plugin {
             payload["max_ms"] = maxLatency;
             payload["unit"] = AGW_UNIT_MILLISECONDS;
             
-            LOGINFO("FlushJob: Sending service latency stats");
+            LOGTRACE("FlushJob: Sending service latency stats");
             Exchange::GatewayContext sysContext = AppGatewayTelemetry::CreateSystemContext();
             mSnapshot->parent->SendT2Event(AGW_MARKER_SERVICE_LATENCY, payload, sysContext);
         }
         
-        LOGINFO("FlushJob: Service latency stats sent: %zu plugin/service combinations", mSnapshot->serviceLatencyStats.size());
+        LOGTRACE("FlushJob: Service latency stats sent: %zu plugin/service combinations", mSnapshot->serviceLatencyStats.size());
     }
 
     void AppGatewayTelemetry::FlushJob::SendApiErrorStats()
@@ -2344,12 +2342,12 @@ namespace Plugin {
             metricPayload["count"] = item.second;
             metricPayload["unit"] = AGW_UNIT_COUNT;
             
-            LOGINFO("FlushJob: Sending API error metric");
+            LOGTRACE("FlushJob: Sending API error metric");
             Exchange::GatewayContext sysContext = AppGatewayTelemetry::CreateSystemContext();
             mSnapshot->parent->SendT2Event(metricName.c_str(), metricPayload, sysContext);
         }
         
-        LOGINFO("FlushJob: API error stats sent: %zu APIs with errors", mSnapshot->apiErrorCounts.size());
+        LOGTRACE("FlushJob: API error stats sent: %zu APIs with errors", mSnapshot->apiErrorCounts.size());
     }
 
     void AppGatewayTelemetry::FlushJob::SendExternalServiceErrorStats()
@@ -2368,12 +2366,12 @@ namespace Plugin {
             metricPayload["count"] = item.second;
             metricPayload["unit"] = AGW_UNIT_COUNT;
             
-            LOGINFO("FlushJob: Sending external service error metric");
+            LOGTRACE("FlushJob: Sending external service error metric");
             Exchange::GatewayContext sysContext = AppGatewayTelemetry::CreateSystemContext();
             mSnapshot->parent->SendT2Event(metricName.c_str(), metricPayload, sysContext);
         }
         
-        LOGINFO("FlushJob: External service error stats sent: %zu services with errors", 
+        LOGTRACE("FlushJob: External service error stats sent: %zu services with errors", 
                 mSnapshot->externalServiceErrorCounts.size());
     }
 
@@ -2404,7 +2402,7 @@ namespace Plugin {
             payload["unit"] = data.unit;
             payload["reporting_interval_sec"] = mSnapshot->reportingIntervalSec;
 
-            LOGINFO("FlushJob: Sending aggregated metric: %s", metricName.c_str());
+            LOGTRACE("FlushJob: Sending aggregated metric: %s", metricName.c_str());
             Exchange::GatewayContext sysContext = AppGatewayTelemetry::CreateSystemContext();
             mSnapshot->parent->SendT2Event(metricName.c_str(), payload, sysContext);
         }
