@@ -136,6 +136,13 @@ namespace WPEFramework {
 
         private:
             void Deactivated(RPC::IRemoteConnection* connection);
+            // Helper to get delegate with shutdown check
+            std::shared_ptr<SettingsDelegate> GetDelegateSafe() {
+                if (mShuttingDown.load(std::memory_order_acquire)) {
+                    return nullptr;
+                }
+                return mDelegate;
+            }
             // Helper methods for System/Device - called by HandleAppGatewayRequest
             Core::hresult GetDeviceMake(string &make /* @out */);
             Core::hresult GetDeviceName(string &name /* @out */);
