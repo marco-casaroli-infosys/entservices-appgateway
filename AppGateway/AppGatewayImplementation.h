@@ -127,7 +127,7 @@ namespace Plugin {
             EventHookJob& operator=(const EventHookJob&) = delete;
             ~EventHookJob()
             {
-                if (mParent != nullptr) {
+                if (nullptr != mParent) {
                     mParent->Release();
                 }
             }

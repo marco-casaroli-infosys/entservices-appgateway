@@ -27,6 +27,7 @@
 
 #define private public
 #include "AppGatewayCommon.h"
+#include "delegate/SystemDelegate.h"
 #undef private
 
 #include "ServiceMock.h"
@@ -362,8 +363,7 @@ TEST(BaseEventDelegateJobLifetime, EventDelegateDispatchJob_NullParent_CreatesSa
 TEST_F(AppDelegateNoStorageTest, EventDelegateDispatchJob_WithValidParent_UsesSharedPtr)
 {
     // Create a local delegate for this test instead of mutating the shared fixture
-    auto localDelegate = std::make_shared<SystemDelegate>();
-    localDelegate->setShell(plugin.mShell);
+    auto localDelegate = std::make_shared<SystemDelegate>(plugin.mShell);
     
     // Capture a weak_ptr to track delegate lifetime
     std::weak_ptr<BaseEventDelegate> weakDelegate = localDelegate;
@@ -390,8 +390,7 @@ TEST_F(AppDelegateNoStorageTest, EventDelegateDispatchJob_WithValidParent_UsesSh
 TEST_F(AppDelegateNoStorageTest, MultipleEventDelegateDispatchJobs_WithSameParent_NoCrash)
 {
     // Create a local delegate for this test instead of mutating the shared fixture
-    auto localDelegate = std::make_shared<SystemDelegate>();
-    localDelegate->setShell(plugin.mShell);
+    auto localDelegate = std::make_shared<SystemDelegate>(plugin.mShell);
     
     // Capture a weak_ptr to track delegate lifetime
     std::weak_ptr<BaseEventDelegate> weakDelegate = localDelegate;
