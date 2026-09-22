@@ -361,25 +361,20 @@ TEST(BaseEventDelegateJobLifetime, EventDelegateDispatchJob_NullParent_CreatesSa
 // Test that EventDelegateDispatchJob properly references parent with shared_ptr
 TEST_F(AppDelegateNoStorageTest, EventDelegateDispatchJob_WithValidParent_UsesSharedPtr)
 {
-    // Get a delegate from the plugin using the correct accessor
-    auto systemDelegate = plugin.mDelegate->getSystemDelegate();
-    ASSERT_NE(nullptr, systemDelegate);
-    
-    // Create job with valid parent using shared_ptr
-    auto delegateSharedPtr = std::dynamic_pointer_cast<BaseEventDelegate>(systemDelegate);
-    ASSERT_NE(nullptr, delegateSharedPtr);
+    // Create a local delegate for this test instead of mutating the shared fixture
+    auto localDelegate = std::make_shared<SystemDelegate>();
+    localDelegate->setShell(plugin.mShell);
     
     // Capture a weak_ptr to track delegate lifetime
-    std::weak_ptr<BaseEventDelegate> weakDelegate = delegateSharedPtr;
+    std::weak_ptr<BaseEventDelegate> weakDelegate = localDelegate;
     
     auto job = BaseEventDelegate::EventDelegateDispatchJob::Create(
-        delegateSharedPtr, "testEvent", "testPayload");
+        localDelegate, "testEvent", "testPayload");
     
     ASSERT_TRUE(job.IsValid());
     
-    // Clear the SettingsDelegate ownership - now only the job should hold a reference
-    plugin.mDelegate->Cleanup();
-    plugin.mDelegate.reset();
+    // Clear the local delegate ownership - now only the job should hold a reference
+    localDelegate.reset();
     
     // Delegate should still be alive because job holds a shared_ptr reference
     ASSERT_FALSE(weakDelegate.expired());
@@ -394,30 +389,27 @@ TEST_F(AppDelegateNoStorageTest, EventDelegateDispatchJob_WithValidParent_UsesSh
 // Test that multiple jobs can reference the same delegate safely with shared_ptr
 TEST_F(AppDelegateNoStorageTest, MultipleEventDelegateDispatchJobs_WithSameParent_NoCrash)
 {
-    auto systemDelegate = plugin.mDelegate->getSystemDelegate();
-    ASSERT_NE(nullptr, systemDelegate);
-    
-    auto delegateSharedPtr = std::dynamic_pointer_cast<BaseEventDelegate>(systemDelegate);
-    ASSERT_NE(nullptr, delegateSharedPtr);
+    // Create a local delegate for this test instead of mutating the shared fixture
+    auto localDelegate = std::make_shared<SystemDelegate>();
+    localDelegate->setShell(plugin.mShell);
     
     // Capture a weak_ptr to track delegate lifetime
-    std::weak_ptr<BaseEventDelegate> weakDelegate = delegateSharedPtr;
+    std::weak_ptr<BaseEventDelegate> weakDelegate = localDelegate;
     
     // Create multiple jobs with the same parent using shared_ptr
     auto job1 = BaseEventDelegate::EventDelegateDispatchJob::Create(
-        delegateSharedPtr, "event1", "payload1");
+        localDelegate, "event1", "payload1");
     auto job2 = BaseEventDelegate::EventDelegateDispatchJob::Create(
-        delegateSharedPtr, "event2", "payload2");
+        localDelegate, "event2", "payload2");
     auto job3 = BaseEventDelegate::EventDelegateDispatchJob::Create(
-        delegateSharedPtr, "event3", "payload3");
+        localDelegate, "event3", "payload3");
     
     ASSERT_TRUE(job1.IsValid());
     ASSERT_TRUE(job2.IsValid());
     ASSERT_TRUE(job3.IsValid());
     
-    // Clear the SettingsDelegate ownership - now only the jobs should hold references
-    plugin.mDelegate->Cleanup();
-    plugin.mDelegate.reset();
+    // Clear the local delegate ownership - now only the jobs should hold references
+    localDelegate.reset();
     
     // Delegate should still be alive because jobs hold shared_ptr references
     ASSERT_FALSE(weakDelegate.expired());

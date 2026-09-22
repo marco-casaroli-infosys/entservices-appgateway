@@ -72,6 +72,9 @@ namespace Plugin {
         AGW_TELEMETRY_INIT(mShell);
         AGW_RECORD_BOOTSTRAP_TIME();
 
+        // Reset shutdown flag to allow job submissions after reinitialization
+        mShuttingDown.store(false, std::memory_order_release);
+
         // Initialize the settings delegate
         mDelegate = std::make_shared<SettingsDelegate>();
         mDelegate->setShell(mShell);
@@ -618,7 +621,7 @@ Core::hresult AppGatewayCommon::SpeechSynthesisSpeak(const Exchange::GatewayCont
 
             // Check shutdown flag first to reject submissions during Deinitialize
             if (mShuttingDown.load(std::memory_order_acquire)) {
-                LOGERR("SafeSubmitEventRegistrationJob: Plugin is shutting down, rejecting job submission");
+                LOGWARN("SafeSubmitEventRegistrationJob: Plugin is shutting down, rejecting job submission");
                 return false;
             }
 
@@ -626,8 +629,12 @@ Core::hresult AppGatewayCommon::SpeechSynthesisSpeak(const Exchange::GatewayCont
             std::lock_guard<std::mutex> lk(mJobDrainMutex);
 
             // Double-check shutdown flag and delegate under lock
-            if (mShuttingDown.load(std::memory_order_acquire) || nullptr == mDelegate) {
-                LOGERR("SafeSubmitEventRegistrationJob: Delegate is null or plugin is shutting down");
+            if (mShuttingDown.load(std::memory_order_acquire)) {
+                LOGWARN("SafeSubmitEventRegistrationJob: Plugin is shutting down, rejecting job submission");
+                return false;
+            }
+            if (nullptr == mDelegate) {
+                LOGERR("SafeSubmitEventRegistrationJob: Delegate is null");
                 return false;
             }
 

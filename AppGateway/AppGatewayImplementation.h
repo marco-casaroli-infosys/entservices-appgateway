@@ -116,7 +116,7 @@ namespace Plugin {
                 const std::string& hookMethod)
                 : mParent(parent), mContext(context), mHookMethod(hookMethod)
             {
-                if (mParent != nullptr) {
+                if (nullptr != mParent) {
                     mParent->AddRef();
                 }
             }
