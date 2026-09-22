@@ -159,13 +159,21 @@ namespace Plugin {
         {
             public:
                 SubscriberJob(AppNotificationsImplementation* delegate, const string& module, const string& event, const bool subscribe)
-                    : mParent(*delegate), mEvent(event), mModule(module), mSubscribe(subscribe) {}
+                    : mParent(delegate), mEvent(event), mModule(module), mSubscribe(subscribe)
+                {
+                    if (nullptr != mParent) {
+                        mParent->AddRef();
+                    }
+                }
 
                 SubscriberJob() = delete;
                 SubscriberJob(const SubscriberJob &) = delete;
                 SubscriberJob &operator=(const SubscriberJob &) = delete;
                 ~SubscriberJob()
                 {
+                    if (nullptr != mParent) {
+                        mParent->Release();
+                    }
                 }
 
                 static Core::ProxyType<Core::IDispatch> Create(AppNotificationsImplementation *parent,
@@ -176,15 +184,17 @@ namespace Plugin {
                 
                 virtual void Dispatch()
                 {
-                    if (mSubscribe) {
-                        mParent.mThunderManager.Subscribe(mModule, mEvent);
-                    } else {
-                        mParent.mThunderManager.Unsubscribe(mModule, mEvent);
+                    if (nullptr != mParent) {
+                        if (mSubscribe) {
+                            mParent->mThunderManager.Subscribe(mModule, mEvent);
+                        } else {
+                            mParent->mThunderManager.Unsubscribe(mModule, mEvent);
+                        }
                     }
                 }
 
             private:
-                AppNotificationsImplementation &mParent;
+                AppNotificationsImplementation *mParent;
                 string mEvent;
                 string mModule;
                 bool mSubscribe;
@@ -194,13 +204,21 @@ namespace Plugin {
         {
             public:
                 EmitJob(AppNotificationsImplementation* delegate, const string& event, const string& payload, const string& appId)
-                    : mParent(*delegate), mEvent(event), mPayload(payload), mAppId(appId) {}
+                    : mParent(delegate), mEvent(event), mPayload(payload), mAppId(appId)
+                {
+                    if (nullptr != mParent) {
+                        mParent->AddRef();
+                    }
+                }
 
                 EmitJob() = delete;
                 EmitJob(const EmitJob &) = delete;
                 EmitJob &operator=(const EmitJob &) = delete;
                 ~EmitJob()
                 {
+                    if (nullptr != mParent) {
+                        mParent->Release();
+                    }
                 }
 
                 static Core::ProxyType<Core::IDispatch> Create(AppNotificationsImplementation *parent,
@@ -211,11 +229,13 @@ namespace Plugin {
                 
                 virtual void Dispatch()
                 {
-                    mParent.mSubMap.EventUpdate(mEvent, mPayload, mAppId);
+                    if (nullptr != mParent) {
+                        mParent->mSubMap.EventUpdate(mEvent, mPayload, mAppId);
+                    }
                 }
 
             private:
-                AppNotificationsImplementation &mParent;
+                AppNotificationsImplementation *mParent;
                 string mEvent;
                 string mPayload;
                 string mAppId;

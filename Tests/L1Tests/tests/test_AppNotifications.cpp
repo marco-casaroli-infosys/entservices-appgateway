@@ -3630,3 +3630,31 @@ TEST_F(AppNotificationsPluginTest, QueryInterface_UnknownInterface_ReturnsNull)
     void* result = plugin.QueryInterface(0xDEADBEEF);
     EXPECT_EQ(nullptr, result);
 }
+
+// =================================================================
+// Job Lifetime Safety Tests
+// =================================================================
+
+// Test that SubscriberJob handles null parent gracefully
+TEST(AppNotificationsJobLifetime, SubscriberJob_NullParent_CreatesSafely)
+{
+    auto job = Plugin::AppNotificationsImplementation::SubscriberJob::Create(
+        nullptr, 
+        "testModule",
+        "testEvent", 
+        true);
+    
+    ASSERT_TRUE(job.IsValid());
+}
+
+// Test that EmitJob handles null parent gracefully
+TEST(AppNotificationsJobLifetime, EmitJob_NullParent_CreatesSafely)
+{
+    auto job = Plugin::AppNotificationsImplementation::EmitJob::Create(
+        nullptr, 
+        "testEvent", 
+        "testPayload", 
+        "testApp");
+    
+    ASSERT_TRUE(job.IsValid());
+}

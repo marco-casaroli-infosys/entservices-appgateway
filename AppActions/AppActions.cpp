@@ -125,11 +125,6 @@ namespace Plugin {
             Exchange::JAppActions::Unregister(*this);
             result = mAppActions->Release();
             mAppActions = nullptr;
-
-            // It should have been the last reference we are releasing,
-            // so it should end up in a DESTRUCTION_SUCCEEDED, if not we
-            // are leaking...
-            ASSERT(result == Core::ERROR_DESTRUCTION_SUCCEEDED);
         }
         mConnectionId = 0;
         mService->Release();

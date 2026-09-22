@@ -33,6 +33,7 @@
 #include "MockSharedStorage.h"
 #include "ThunderPortability.h"
 #include "WorkerPoolImplementation.h"
+#include "BaseEventDelegate.h"
 
 using namespace WPEFramework;
 using namespace WPEFramework::Plugin;
@@ -341,6 +342,96 @@ TEST_F(AppDelegateNoStorageTest, AGC_L1_026_GetAdvertisingId_NoSharedStorage_Ret
 
     EXPECT_EQ(Core::ERROR_UNAVAILABLE, rc);
     EXPECT_NE(result.find("Unable to get SharedStorage interface"), std::string::npos);
+}
+
+// =================================================================
+// BaseEventDelegate Job Lifetime Safety Tests
+// =================================================================
+
+// Test that EventDelegateDispatchJob handles null parent gracefully with shared_ptr
+TEST(BaseEventDelegateJobLifetime, EventDelegateDispatchJob_NullParent_CreatesSafely)
+{
+    std::shared_ptr<BaseEventDelegate> nullDelegate = nullptr;
+    auto job = BaseEventDelegate::EventDelegateDispatchJob::Create(
+        nullDelegate, "testEvent", "testPayload");
+    
+    ASSERT_TRUE(job.IsValid());
+}
+
+// Test that EventDelegateDispatchJob properly references parent with shared_ptr
+TEST_F(AppDelegateNoStorageTest, EventDelegateDispatchJob_WithValidParent_UsesSharedPtr)
+{
+    // Get a delegate from the plugin using the correct accessor
+    auto systemDelegate = plugin.mDelegate->getSystemDelegate();
+    ASSERT_NE(nullptr, systemDelegate);
+    
+    // Create job with valid parent using shared_ptr
+    auto delegateSharedPtr = std::dynamic_pointer_cast<BaseEventDelegate>(systemDelegate);
+    ASSERT_NE(nullptr, delegateSharedPtr);
+    
+    // Capture a weak_ptr to track delegate lifetime
+    std::weak_ptr<BaseEventDelegate> weakDelegate = delegateSharedPtr;
+    
+    auto job = BaseEventDelegate::EventDelegateDispatchJob::Create(
+        delegateSharedPtr, "testEvent", "testPayload");
+    
+    ASSERT_TRUE(job.IsValid());
+    
+    // Clear the SettingsDelegate ownership - now only the job should hold a reference
+    plugin.mDelegate->Cleanup();
+    plugin.mDelegate.reset();
+    
+    // Delegate should still be alive because job holds a shared_ptr reference
+    ASSERT_FALSE(weakDelegate.expired());
+    
+    // Destroy the job
+    job = nullptr;
+    
+    // Now the delegate should be destroyed
+    ASSERT_TRUE(weakDelegate.expired());
+}
+
+// Test that multiple jobs can reference the same delegate safely with shared_ptr
+TEST_F(AppDelegateNoStorageTest, MultipleEventDelegateDispatchJobs_WithSameParent_NoCrash)
+{
+    auto systemDelegate = plugin.mDelegate->getSystemDelegate();
+    ASSERT_NE(nullptr, systemDelegate);
+    
+    auto delegateSharedPtr = std::dynamic_pointer_cast<BaseEventDelegate>(systemDelegate);
+    ASSERT_NE(nullptr, delegateSharedPtr);
+    
+    // Capture a weak_ptr to track delegate lifetime
+    std::weak_ptr<BaseEventDelegate> weakDelegate = delegateSharedPtr;
+    
+    // Create multiple jobs with the same parent using shared_ptr
+    auto job1 = BaseEventDelegate::EventDelegateDispatchJob::Create(
+        delegateSharedPtr, "event1", "payload1");
+    auto job2 = BaseEventDelegate::EventDelegateDispatchJob::Create(
+        delegateSharedPtr, "event2", "payload2");
+    auto job3 = BaseEventDelegate::EventDelegateDispatchJob::Create(
+        delegateSharedPtr, "event3", "payload3");
+    
+    ASSERT_TRUE(job1.IsValid());
+    ASSERT_TRUE(job2.IsValid());
+    ASSERT_TRUE(job3.IsValid());
+    
+    // Clear the SettingsDelegate ownership - now only the jobs should hold references
+    plugin.mDelegate->Cleanup();
+    plugin.mDelegate.reset();
+    
+    // Delegate should still be alive because jobs hold shared_ptr references
+    ASSERT_FALSE(weakDelegate.expired());
+    
+    // Destroy jobs one at a time
+    job1 = nullptr;
+    ASSERT_FALSE(weakDelegate.expired()); // Still alive due to job2 and job3
+    
+    job2 = nullptr;
+    ASSERT_FALSE(weakDelegate.expired()); // Still alive due to job3
+    
+    job3 = nullptr;
+    // Now the delegate should be destroyed
+    ASSERT_TRUE(weakDelegate.expired());
 }
 
 } // namespace

@@ -2242,3 +2242,4 @@ TEST(AppGatewayPluginTest, AppGateway_QueryInterface_CoversInterfaceMap)
     auto* iface = plugin.QueryInterface(PluginHost::IPlugin::ID);
     EXPECT_NE(nullptr, iface);
 }
+

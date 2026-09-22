@@ -26,26 +26,27 @@
 #include <map>
 #include <unordered_set>
 #include <utility>
+#include <memory>
 
 using namespace WPEFramework;
 
-class BaseEventDelegate
+class BaseEventDelegate : public std::enable_shared_from_this<BaseEventDelegate>
 {
 public:
     class EXTERNAL EventDelegateDispatchJob : public Core::IDispatch
     {
     public:
-        EventDelegateDispatchJob(BaseEventDelegate *delegate, const string &event, const string &payload, string appId = "")
-            : mDelegate(*delegate), mEvent(event), mPayload(payload), mAppId(std::move(appId)) {}
+        EventDelegateDispatchJob(std::shared_ptr<BaseEventDelegate> delegate, const string &event, const string &payload, string appId = "")
+            : mDelegate(std::move(delegate)), mEvent(event), mPayload(payload), mAppId(std::move(appId))
+        {
+        }
 
         EventDelegateDispatchJob() = delete;
         EventDelegateDispatchJob(const EventDelegateDispatchJob &) = delete;
         EventDelegateDispatchJob &operator=(const EventDelegateDispatchJob &) = delete;
-        ~EventDelegateDispatchJob()
-        {
-        }
+        ~EventDelegateDispatchJob() = default;
 
-        static Core::ProxyType<Core::IDispatch> Create(BaseEventDelegate *parent,
+        static Core::ProxyType<Core::IDispatch> Create(std::shared_ptr<BaseEventDelegate> parent,
                                                        const string &event, const string &payload, string appId = "")
         {
             return (Core::ProxyType<Core::IDispatch>(Core::ProxyType<EventDelegateDispatchJob>::Create(parent, event, payload, std::move(appId))));
@@ -53,11 +54,13 @@ public:
 
         virtual void Dispatch()
         {
-            mDelegate.DispatchToAppNotifications(mEvent, mPayload, mAppId);
+            if (nullptr != mDelegate) {
+                mDelegate->DispatchToAppNotifications(mEvent, mPayload, mAppId);
+            }
         }
 
     private:
-        BaseEventDelegate &mDelegate;
+        std::shared_ptr<BaseEventDelegate> mDelegate;
         string mEvent;
         string mPayload;
         string mAppId;
@@ -68,7 +71,7 @@ public:
     {
     }
 
-    ~BaseEventDelegate()
+    virtual ~BaseEventDelegate()
     {
         // Cleanup registered notifications
         for (auto &entry : mRegisteredNotifications)
@@ -94,7 +97,7 @@ public:
             return false;
         }
 
-        Core::IWorkerPool::Instance().Submit(EventDelegateDispatchJob::Create(this, event, payload, std::move(appId)));
+        Core::IWorkerPool::Instance().Submit(EventDelegateDispatchJob::Create(shared_from_this(), event, payload, std::move(appId)));
 
         return true;
     }

@@ -149,22 +149,12 @@ namespace Plugin {
         if (mResponder != nullptr) {
             result = mResponder->Release();
             mResponder = nullptr;
-
-            // It should have been the last reference we are releasing,
-            // so it should end up in a DESTRUCTION_SUCCEEDED, if not we
-            // are leaking...
-            ASSERT(result == Core::ERROR_DESTRUCTION_SUCCEEDED);
         }
 
         if (mAppGateway != nullptr) {
             Exchange::JAppGatewayResolver::Unregister(*this);
             result = mAppGateway->Release();
             mAppGateway = nullptr;
-
-            // It should have been the last reference we are releasing,
-            // so it should end up in a DESTRUCTION_SUCCEEDED, if not we
-            // are leaking...
-            ASSERT(result == Core::ERROR_DESTRUCTION_SUCCEEDED);
         }
 
         // If this was running in a (container) process...

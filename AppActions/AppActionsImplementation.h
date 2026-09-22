@@ -58,9 +58,11 @@ class AppActionsImplementation :
         {
         public:
             NotifyJob(AppActionsImplementation* parent, const string& initiator, const string& intent, const string& handlerAppId)
-                : mParent(*parent), mInitiator(initiator), mIntent(intent), mHandlerAppId(handlerAppId)
+                : mParent(parent), mInitiator(initiator), mIntent(intent), mHandlerAppId(handlerAppId)
             {
-                mParent.AddRef();
+                if (nullptr != mParent) {
+                    mParent->AddRef();
+                }
             }
 
             NotifyJob() = delete;
@@ -68,7 +70,9 @@ class AppActionsImplementation :
             NotifyJob& operator=(const NotifyJob&) = delete;
             ~NotifyJob()
             {
-                mParent.Release();
+                if (nullptr != mParent) {
+                    mParent->Release();
+                }
             }
 
             static Core::ProxyType<Core::IDispatch> Create(AppActionsImplementation* parent,
@@ -79,11 +83,13 @@ class AppActionsImplementation :
 
             void Dispatch() override
             {
-                mParent.DispatchActionStartRequest(mInitiator, mIntent, mHandlerAppId);
+                if (nullptr != mParent) {
+                    mParent->DispatchActionStartRequest(mInitiator, mIntent, mHandlerAppId);
+                }
             }
 
         private:
-            AppActionsImplementation& mParent;
+            AppActionsImplementation* mParent;
             const string mInitiator;
             const string mIntent;
             const string mHandlerAppId;

@@ -85,6 +85,9 @@ namespace Plugin {
         ASSERT(service == mShell);
         mConnectionId = 0;
 
+        // Set shutdown flag to reject new job submissions
+        mShuttingDown.store(true, std::memory_order_release);
+
         // Wait for any in-flight EventRegistrationJobs to complete before
         // destroying the delegate.  These jobs run on the worker pool and
         // may be blocked inside Thunder Subscribe() calls (up to the
@@ -93,11 +96,11 @@ namespace Plugin {
         {
             std::unique_lock<std::mutex> lk(mJobDrainMutex);
             mJobDrainCv.wait(lk, [this] { return mActiveJobs.load(std::memory_order_acquire) == 0; });
+            
+            // Now that all jobs are done, safely cleanup the delegate under the same lock
+            mDelegate->Cleanup();
+            mDelegate.reset();
         }
-
-        mDelegate->Cleanup();
-        // Clean up the delegate
-        mDelegate.reset();
 
         mShell->Release();
         mShell = nullptr;
@@ -613,8 +616,18 @@ Core::hresult AppGatewayCommon::SpeechSynthesisSpeak(const Exchange::GatewayCont
                 return false;
             }
 
-            if (nullptr == mDelegate) {
-                LOGERR("SafeSubmitEventRegistrationJob: Delegate is null");
+            // Check shutdown flag first to reject submissions during Deinitialize
+            if (mShuttingDown.load(std::memory_order_acquire)) {
+                LOGERR("SafeSubmitEventRegistrationJob: Plugin is shutting down, rejecting job submission");
+                return false;
+            }
+
+            // Lock to prevent race with Deinitialize resetting mDelegate
+            std::lock_guard<std::mutex> lk(mJobDrainMutex);
+
+            // Double-check shutdown flag and delegate under lock
+            if (mShuttingDown.load(std::memory_order_acquire) || nullptr == mDelegate) {
+                LOGERR("SafeSubmitEventRegistrationJob: Delegate is null or plugin is shutting down");
                 return false;
             }
 
