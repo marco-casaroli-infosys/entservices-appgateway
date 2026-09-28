@@ -598,11 +598,11 @@ namespace AppGatewayTelemetryHelper {
 
         ~ScopedJobTimer()  // fires at end of Dispatch() scope → T3
         {
-            if (nullptr == mClient || !mClient->IsAvailable()) {
+            auto endTime = std::chrono::steady_clock::now();  // T3 — capture before any checks
+
+            if (nullptr == mClient) {
                 return;
             }
-
-            auto endTime = std::chrono::steady_clock::now();  // T3
 
             auto toMs = [](std::chrono::steady_clock::duration d) -> double {
                 return std::chrono::duration_cast<std::chrono::microseconds>(d).count() / 1000.0;
