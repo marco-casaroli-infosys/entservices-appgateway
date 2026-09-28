@@ -146,18 +146,29 @@ public:
             return Core::ERROR_UNAVAILABLE;
         }
 
-        string interface;
-        Core::hresult rc = networkManager->GetPrimaryInterface(interface);
-        if (rc == Core::ERROR_NONE) {
-            // Transform the response: return_or_error(.result, "couldn't get network connected status")
-            // Return the boolean result directly as per transform specification
-            result = interface.empty() ? "false" : "true";
-            return Core::ERROR_NONE;
-        } else {
+        string primaryInterface;
+        Core::hresult rc = networkManager->GetPrimaryInterface(primaryInterface);
+        if (rc != Core::ERROR_NONE) {
             LOGERR("Failed to get primary interface on NetworkManager, error: %u", rc);
             ErrorUtils::CustomInternal("Failed to get NetworkInfo", result);
             return Core::ERROR_GENERAL;
         }
+
+        if (primaryInterface.empty()) {
+            result = "false";
+            return Core::ERROR_NONE;
+        }
+
+        // A non-empty primary-interface name isn't enough on its own -- it can persist
+        // for a moment after that interface's own link drops. Check its actual link
+        // state instead of trusting the name's mere presence.
+        bool connected = false;
+        if (GetInterfaceConnected(primaryInterface, connected) != Core::ERROR_NONE) {
+            LOGERR("Primary interface \"%s\" not found in GetAvailableInterfaces()", primaryInterface.c_str());
+        }
+
+        result = connected ? "true" : "false";
+        return Core::ERROR_NONE;
     }
 
     // PUBLIC_INTERFACE
@@ -248,16 +259,103 @@ public:
     }
 
 private:
+    // Looks up `interfaceName` (a device name like "eth0"/"wlan0", the same
+    // representation GetPrimaryInterface() and the notification callbacks use) in
+    // GetAvailableInterfaces() and reports its own link state. This is the single
+    // source of truth for "is this specific interface actually connected" — a
+    // primary-interface name alone doesn't tell us that (it can persist briefly
+    // after that interface's own link drops, or lag briefly after it comes up).
+    Core::hresult GetInterfaceConnected(const string &interfaceName, bool &connected)
+    {
+        connected = false;
+
+        Exchange::INetworkManager *networkManager = GetNetworkManagerInterface();
+        if (networkManager == nullptr) {
+            return Core::ERROR_UNAVAILABLE;
+        }
+
+        Exchange::INetworkManager::IInterfaceDetailsIterator *interfaces = nullptr;
+        Core::hresult rc = networkManager->GetAvailableInterfaces(interfaces);
+        if (rc != Core::ERROR_NONE) {
+            return rc;
+        }
+        if (interfaces == nullptr) {
+            return Core::ERROR_GENERAL;
+        }
+
+        bool found = false;
+        Exchange::INetworkManager::InterfaceDetails iface{};
+        while (interfaces->Next(iface)) {
+            if (StringUtils::toLower(iface.name) == StringUtils::toLower(interfaceName)) {
+                connected = iface.connected;
+                found = true;
+                break;
+            }
+        }
+        interfaces->Release();
+
+        return found ? Core::ERROR_NONE : Core::ERROR_GENERAL;
+    }
+
+    // Both onActiveInterfaceChange and onInterfaceStateChange can react to the same
+    // real transition (a reconnect changes both the primary interface's identity and
+    // its link state), so route dispatch through here to avoid firing the event twice
+    // with the same value.
+    void DispatchConnectedChanged(bool connected)
+    {
+        {
+            std::lock_guard<std::mutex> lock(mLastConnectedMutex);
+            if (mLastConnectedKnown && mLastConnected == connected) {
+                return;
+            }
+            mLastConnectedKnown = true;
+            mLastConnected = connected;
+        }
+        Dispatch("Network.onConnectedChanged", ObjectUtils::CreateBooleanJsonString("value", connected));
+    }
+
     class NetworkNotificationHandler : public Exchange::INetworkManager::INotification
     {
     public:
         NetworkNotificationHandler(NetworkDelegate &parent) : mParent(parent), registered(false) {}
         ~NetworkNotificationHandler() {}
 
-        void onActiveInterfaceChange(const string prevActiveInterface, const string currentActiveInterface)
+        void onActiveInterfaceChange(const string prevActiveInterface, const string currentActiveInterface) override
         {
             LOGDBG("onActiveInterfaceChange: prev=%s, current=%s", prevActiveInterface.c_str(), currentActiveInterface.c_str());
-            mParent.Dispatch("Network.onConnectedChanged", ObjectUtils::CreateBooleanJsonString("value", currentActiveInterface.empty() ? false : true) );
+            bool connected = false;
+            if (!currentActiveInterface.empty()) {
+                mParent.GetInterfaceConnected(currentActiveInterface, connected);
+            }
+            mParent.DispatchConnectedChanged(connected);
+        }
+
+        // NetworkManager's link-carrier notification -- fires independent of which
+        // interface is primary, so Network.connected only reacts when the primary
+        // interface's own link is what changed (a secondary interface flapping
+        // shouldn't move it). This is what makes link-only flaps observable: previously
+        // only onActiveInterfaceChange (primary-interface identity change) was wired
+        // up, which never fires when the primary interface stays the same and only its
+        // link drops.
+        void onInterfaceStateChange(const Exchange::INetworkManager::InterfaceState state, const string interface) override
+        {
+            LOGDBG("onInterfaceStateChange: state=%d, interface=%s", state, interface.c_str());
+
+            if (state != Exchange::INetworkManager::INTERFACE_LINK_UP &&
+                state != Exchange::INetworkManager::INTERFACE_LINK_DOWN) {
+                return;
+            }
+
+            string primaryInterface;
+            Exchange::INetworkManager *networkManager = mParent.GetNetworkManagerInterface();
+            if (networkManager == nullptr || networkManager->GetPrimaryInterface(primaryInterface) != Core::ERROR_NONE) {
+                return;
+            }
+            if (StringUtils::toLower(interface) != StringUtils::toLower(primaryInterface)) {
+                return;
+            }
+
+            mParent.DispatchConnectedChanged(state == Exchange::INetworkManager::INTERFACE_LINK_UP);
         }
 
         void onInternetStatusChange(const Exchange::INetworkManager::InternetStatus prevState, const Exchange::INetworkManager::InternetStatus currState, const string interface)
@@ -309,6 +407,9 @@ private:
     PluginHost::IShell *mShell;
     Core::Sink<NetworkNotificationHandler> mNotificationHandler;
     mutable std::mutex mRegistrationMutex;
+    bool mLastConnectedKnown = false;
+    bool mLastConnected = false;
+    std::mutex mLastConnectedMutex;
 };
 
 #endif // __NETWORKDELEGATE_H__
