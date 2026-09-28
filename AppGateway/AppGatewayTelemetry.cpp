@@ -355,13 +355,7 @@ namespace Plugin {
             return Core::ERROR_NONE;
         }
         else if (AGW_MARKER_JOB_TIMING == eventName) {
-            JsonObject data;
-            std::string jobName;
-            if (data.FromString(eventData) && data.HasLabel("job")) {
-                jobName = data["job"].String();
-            }
-            LOGINFO("Sending job timing event to T2: job=%s, timing=%s", jobName.c_str(), eventData.c_str());
-            SendT2Event(eventName.c_str(), eventData, context);
+            SendT2EventForJobTiming(eventData, context);
             return Core::ERROR_NONE;
         }
 
@@ -382,7 +376,7 @@ namespace Plugin {
                                        ? data[cfg.jsonField].String()
                                        : eventName;
                 (this->*cfg.recordFn)(context, name);
-                LOGINFO("Sending immediate event to T2: marker=%s, %s=%s",
+                LOGTRACE("Sending immediate event to T2: marker=%s, %s=%s",
                         eventName.c_str(), cfg.jsonField, name.c_str());
                 SendT2Event(eventName.c_str(), eventData, context);
                 return Core::ERROR_NONE;
@@ -1069,7 +1063,7 @@ namespace Plugin {
 
         // Only send if there's data
         if (0 == totalCalls && 0 == wsConnections && 0 == pendingCount) {
-            LOGINFO("No health stats to report");
+            LOGTRACE("No health stats to report");
             return;
         }
 
@@ -1084,7 +1078,7 @@ namespace Plugin {
         healthPayload["unit"] = AGW_UNIT_COUNT;
 
         //LOGINFO("Sending health stats to T2 (pending=%u)", pendingCount);
-        LOGINFO("Sending health stats to T2");
+        LOGTRACE("Sending health stats to T2");
         Exchange::GatewayContext sysContext = CreateSystemContext();
         SendT2Event(AGW_MARKER_HEALTH_STATS, healthPayload, sysContext);
 
@@ -1117,12 +1111,12 @@ namespace Plugin {
             metricPayload["count"] = item.second;
             metricPayload["unit"] = AGW_UNIT_COUNT;
             
-            LOGINFO("Sending API error metric to T2");
+            LOGTRACE("Sending API error metric to T2");
             Exchange::GatewayContext sysContext = CreateSystemContext();
             SendT2Event(metricName.c_str(), metricPayload, sysContext);
         }
 
-        LOGINFO("API error stats sent as metrics: %zu APIs with errors", apiErrorCounts.size());
+        LOGTRACE("API error stats sent as metrics: %zu APIs with errors", apiErrorCounts.size());
     }
 
     void AppGatewayTelemetry::SendExternalServiceErrorStats()
@@ -1150,12 +1144,12 @@ namespace Plugin {
             metricPayload["count"] = item.second;
             metricPayload["unit"] = AGW_UNIT_COUNT;
             
-            LOGINFO("Sending external service error metric to T2");
+            LOGTRACE("Sending external service error metric to T2");
             Exchange::GatewayContext sysContext = CreateSystemContext();
             SendT2Event(metricName.c_str(), metricPayload, sysContext);
         }
 
-        LOGINFO("External service error stats sent as metrics: %zu services with errors", 
+        LOGTRACE("External service error stats sent as metrics: %zu services with errors", 
             externalServiceErrorCounts.size());
     }
 
@@ -1196,7 +1190,7 @@ namespace Plugin {
             payload["reporting_interval_sec"] = reportingIntervalSec;
 
             // Use the metric name as the T2 marker
-            LOGINFO("Sending aggregated metric to T2: %s", metricName.c_str());
+            LOGTRACE("Sending aggregated metric to T2: %s", metricName.c_str());
             Exchange::GatewayContext sysContext = CreateSystemContext();
             SendT2Event(metricName.c_str(), payload, sysContext);
 
@@ -1271,7 +1265,7 @@ namespace Plugin {
             payload["total_count"] = totalCalls;
             
             // T2 marker: Use common marker since plugin_name and method_name are in payload
-            LOGINFO("Sending API method stats to T2");
+            LOGTRACE("Sending API method stats to T2");
             Exchange::GatewayContext sysContext = CreateSystemContext();
             SendT2Event(AGW_MARKER_API_METHOD_STAT, payload, sysContext);
             
@@ -1281,7 +1275,7 @@ namespace Plugin {
                     stats.successCount > 0 ? stats.totalSuccessLatencyMs / stats.successCount : 0.0);
         }
 
-        LOGINFO("API method stats sent: %zu plugin/method combinations", apiMethodStats.size());
+        LOGTRACE("API method stats sent: %zu plugin/method combinations", apiMethodStats.size());
     }
 
     void AppGatewayTelemetry::SendApiLatencyStats()
@@ -1326,7 +1320,7 @@ namespace Plugin {
             payload["unit"] = AGW_UNIT_MILLISECONDS;
             
             // Use common T2 marker - plugin and API names are in payload
-            LOGINFO("Sending API latency stats to T2");
+            LOGTRACE("Sending API latency stats to T2");
             Exchange::GatewayContext sysContext = CreateSystemContext();
             SendT2Event(AGW_MARKER_API_LATENCY, payload, sysContext);
 
@@ -1335,7 +1329,7 @@ namespace Plugin {
                     stats.count, avgLatency, minLatency, maxLatency);
         }
 
-        LOGINFO("API latency stats sent: %zu plugin/API combinations", apiLatencyStats.size());
+        LOGTRACE("API latency stats sent: %zu plugin/API combinations", apiLatencyStats.size());
     }
 
     void AppGatewayTelemetry::SendServiceLatencyStats()
@@ -1380,7 +1374,7 @@ namespace Plugin {
             payload["unit"] = AGW_UNIT_MILLISECONDS;
             
             // Use common T2 marker - plugin and service names are in payload
-            LOGINFO("Sending service latency stats to T2");
+            LOGTRACE("Sending service latency stats to T2");
             Exchange::GatewayContext sysContext = CreateSystemContext();
             SendT2Event(AGW_MARKER_SERVICE_LATENCY, payload, sysContext);
             
@@ -1389,7 +1383,7 @@ namespace Plugin {
                     stats.count, avgLatency, minLatency, maxLatency);
         }
 
-        LOGINFO("Service latency stats sent: %zu plugin/service combinations", serviceLatencyStats.size());
+        LOGTRACE("Service latency stats sent: %zu plugin/service combinations", serviceLatencyStats.size());
     }
 
     void AppGatewayTelemetry::SendServiceMethodStats()
@@ -1458,7 +1452,7 @@ namespace Plugin {
             payload["total_count"] = totalCalls;
             
             // T2 marker: Use AGW_MARKER_SERVICE_METHOD_STAT since plugin_name and service_name are in payload
-            LOGINFO("Sending service method stats to T2");
+            LOGTRACE("Sending service method stats to T2");
             Exchange::GatewayContext sysContext = CreateSystemContext();
             SendT2Event(AGW_MARKER_SERVICE_METHOD_STAT, payload, sysContext);
             
@@ -1468,7 +1462,7 @@ namespace Plugin {
                     stats.successCount > 0 ? stats.totalSuccessLatencyMs / stats.successCount : 0.0);
         }
 
-        LOGINFO("Service method stats sent: %zu plugin/service combinations", serviceMethodStats.size());
+        LOGTRACE("Service method stats sent: %zu plugin/service combinations", serviceMethodStats.size());
     }
 
     Exchange::GatewayContext AppGatewayTelemetry::CreateSystemContext()
@@ -1488,18 +1482,11 @@ namespace Plugin {
         // Context fields first
         // Skip adding context fields for UNKNOWN or SYSTEM contexts
         bool includeContext = (context.appId != "UNKNOWN" && context.appId != "SYSTEM");
-        bool isJobTiming = (std::string(marker) == AGW_MARKER_JOB_TIMING);
 
         if (includeContext) {
-            if (!isJobTiming || context.requestId != 0) {
-                contextPayload["request_id"] = context.requestId;
-            }
-            if (!isJobTiming || context.connectionId != 0) {
-                contextPayload["connection_id"] = context.connectionId;
-            }
-            if (!isJobTiming || !context.appId.empty()) {
-                contextPayload["app_id"] = context.appId;
-            }
+            contextPayload["request_id"] = context.requestId;
+            contextPayload["connection_id"] = context.connectionId;
+            contextPayload["app_id"] = context.appId;
         }
 
         // Parse the payload string as JSON if possible, otherwise include as raw string
@@ -1534,18 +1521,11 @@ namespace Plugin {
         // Context fields first
         // Skip adding context fields for UNKNOWN or SYSTEM contexts
         bool includeContext = (context.appId != "UNKNOWN" && context.appId != "SYSTEM");
-        bool isJobTiming = (std::string(marker) == AGW_MARKER_JOB_TIMING);
 
         if (includeContext) {
-            if (!isJobTiming || context.requestId != 0) {
-                contextPayload["request_id"] = context.requestId;
-            }
-            if (!isJobTiming || context.connectionId != 0) {
-                contextPayload["connection_id"] = context.connectionId;
-            }
-            if (!isJobTiming || !context.appId.empty()) {
-                contextPayload["app_id"] = context.appId;
-            }
+            contextPayload["request_id"] = context.requestId;
+            contextPayload["connection_id"] = context.connectionId;
+            contextPayload["app_id"] = context.appId;
         }
 
         // Merge payload fields into contextPayload
@@ -1574,6 +1554,46 @@ namespace Plugin {
         LOGINFO("marker=%s, payload=%s", marker, rawPayload.c_str());
         Utils::Telemetry::sendMessage(const_cast<char*>(marker),
                                       const_cast<char*>(rawPayload.c_str()));
+    }
+
+    void AppGatewayTelemetry::SendT2EventForJobTiming(const std::string& payload, const Exchange::GatewayContext& context)
+    {
+        // Dedicated function for job timing telemetry.
+        // Only includes context fields when they carry meaningful (non-zero/non-empty) values,
+        // since many jobs don't have a request ID, connection ID, or app ID.
+        JsonObject contextPayload;
+
+        bool includeContext = (context.appId != "UNKNOWN" && context.appId != "SYSTEM");
+        if (includeContext) {
+            if (context.requestId != 0) {
+                contextPayload["request_id"] = context.requestId;
+            }
+            if (context.connectionId != 0) {
+                contextPayload["connection_id"] = context.connectionId;
+            }
+            if (!context.appId.empty()) {
+                contextPayload["app_id"] = context.appId;
+            }
+        }
+
+        // Parse the payload string as JSON and merge its fields
+        JsonObject payloadObj;
+        if (payloadObj.FromString(payload)) {
+            auto it = payloadObj.Variants();
+            while (it.Next()) {
+                contextPayload[it.Label()] = it.Current();
+            }
+        } else {
+            contextPayload["data"] = payload;
+        }
+
+        std::string formattedPayload = FormatTelemetryPayload(contextPayload);
+
+        LOGINFO("marker=%s, payload=%s", AGW_MARKER_JOB_TIMING, formattedPayload.c_str());
+#if 0 // Not sending the message to server for now
+        Utils::Telemetry::sendMessage(const_cast<char*>(AGW_MARKER_JOB_TIMING),
+                                        const_cast<char*>(formattedPayload.c_str()));
+#endif                                        
     }
 
     void AppGatewayTelemetry::ResetHealthStats()
@@ -1750,7 +1770,7 @@ namespace Plugin {
 
         // Only send if there's data
         if (totalCalls == 0 && websocketConnections == 0 && pendingCount == 0) {
-            LOGINFO("TelemetrySnapshot: No health stats to report");
+            LOGTRACE("TelemetrySnapshot: No health stats to report");
             return;
         }
 
@@ -1765,7 +1785,7 @@ namespace Plugin {
         healthPayload["unit"] = AGW_UNIT_COUNT;
 
         //LOGINFO("TelemetrySnapshot: Sending health stats (pending=%u)", pendingCount);
-        LOGINFO("TelemetrySnapshot: Sending health stats");
+        LOGTRACE("TelemetrySnapshot: Sending health stats");
         Exchange::GatewayContext sysContext = parent->CreateSystemContext();
         parent->SendT2Event(AGW_MARKER_HEALTH_STATS, healthPayload, sysContext);
 
@@ -1834,7 +1854,7 @@ namespace Plugin {
             parent->SendT2Event(AGW_MARKER_API_METHOD_STAT, payload, sysContext);
         }
 
-        LOGINFO("TelemetrySnapshot: API method stats sent: %zu plugin/method combinations", apiMethodStats.size());
+        LOGTRACE("TelemetrySnapshot: API method stats sent: %zu plugin/method combinations", apiMethodStats.size());
     }
 
     void AppGatewayTelemetry::TelemetrySnapshot::SendApiLatencyStats()
@@ -1873,7 +1893,7 @@ namespace Plugin {
             parent->SendT2Event(AGW_MARKER_API_LATENCY, payload, sysContext);
         }
 
-        LOGINFO("TelemetrySnapshot: API latency stats sent: %zu plugin/API combinations", apiLatencyStats.size());
+        LOGTRACE("TelemetrySnapshot: API latency stats sent: %zu plugin/API combinations", apiLatencyStats.size());
     }
 
     void AppGatewayTelemetry::TelemetrySnapshot::SendServiceMethodStats()
@@ -1932,7 +1952,7 @@ namespace Plugin {
             parent->SendT2Event(AGW_MARKER_SERVICE_METHOD_STAT, payload, sysContext);
         }
 
-        LOGINFO("TelemetrySnapshot: Service method stats sent: %zu plugin/service combinations", serviceMethodStats.size());
+        LOGTRACE("TelemetrySnapshot: Service method stats sent: %zu plugin/service combinations", serviceMethodStats.size());
     }
 
     void AppGatewayTelemetry::TelemetrySnapshot::SendServiceLatencyStats()
@@ -1971,7 +1991,7 @@ namespace Plugin {
             parent->SendT2Event(AGW_MARKER_SERVICE_LATENCY, payload, sysContext);
         }
 
-        LOGINFO("TelemetrySnapshot: Service latency stats sent: %zu plugin/service combinations", serviceLatencyStats.size());
+        LOGTRACE("TelemetrySnapshot: Service latency stats sent: %zu plugin/service combinations", serviceLatencyStats.size());
     }
 
     void AppGatewayTelemetry::TelemetrySnapshot::SendApiErrorStats()
@@ -1995,7 +2015,7 @@ namespace Plugin {
             parent->SendT2Event(metricName.c_str(), metricPayload, sysContext);
         }
 
-        LOGINFO("TelemetrySnapshot: API error stats sent: %zu APIs with errors", apiErrorCounts.size());
+        LOGTRACE("TelemetrySnapshot: API error stats sent: %zu APIs with errors", apiErrorCounts.size());
     }
 
     void AppGatewayTelemetry::TelemetrySnapshot::SendExternalServiceErrorStats()
@@ -2019,7 +2039,7 @@ namespace Plugin {
             parent->SendT2Event(metricName.c_str(), metricPayload, sysContext);
         }
 
-        LOGINFO("TelemetrySnapshot: External service error stats sent: %zu services with errors", 
+        LOGTRACE("TelemetrySnapshot: External service error stats sent: %zu services with errors", 
                 externalServiceErrorCounts.size());
     }
 
@@ -2055,7 +2075,7 @@ namespace Plugin {
             parent->SendT2Event(metricName.c_str(), payload, sysContext);
         }
 
-        LOGINFO("TelemetrySnapshot: Aggregated metrics sent: %zu metrics", metricsCache.size());
+        LOGTRACE("TelemetrySnapshot: Aggregated metrics sent: %zu metrics", metricsCache.size());
     }
 
     // FlushJob Implementation - Async telemetry sending (DEPRECATED - kept for compatibility)
@@ -2067,7 +2087,7 @@ namespace Plugin {
             return;
         }
 
-        LOGINFO("FlushJob: Sending telemetry snapshot asynchronously");
+        LOGTRACE("FlushJob: Sending telemetry snapshot asynchronously");
 
         // Send all aggregated data from snapshot
         SendHealthStats();
@@ -2089,7 +2109,7 @@ namespace Plugin {
 
         // Only send if there's data
         if (mSnapshot->totalCalls == 0 && mSnapshot->websocketConnections == 0 && pendingCount == 0) {
-            LOGINFO("FlushJob: No health stats to report");
+            LOGTRACE("FlushJob: No health stats to report");
             return;
         }
 
@@ -2103,8 +2123,7 @@ namespace Plugin {
         healthPayload["failed_calls"] = mSnapshot->failedCalls;
         healthPayload["unit"] = AGW_UNIT_COUNT;
 
-        //LOGINFO("FlushJob: Sending health stats (pending=%u)", pendingCount);
-        LOGINFO("FlushJob: Sending health stats");
+        LOGTRACE("FlushJob: Sending health stats");
         Exchange::GatewayContext sysContext = AppGatewayTelemetry::CreateSystemContext();
         mSnapshot->parent->SendT2Event(AGW_MARKER_HEALTH_STATS, healthPayload, sysContext);
     }
@@ -2162,12 +2181,12 @@ namespace Plugin {
 
             payload["total_count"] = stats.successCount + stats.errorCount;
             
-            LOGINFO("FlushJob: Sending API method stats");
+            LOGTRACE("FlushJob: Sending API method stats");
             Exchange::GatewayContext sysContext = AppGatewayTelemetry::CreateSystemContext();
             mSnapshot->parent->SendT2Event(AGW_MARKER_API_METHOD_STAT, payload, sysContext);
         }
 
-        LOGINFO("FlushJob: API method stats sent: %zu plugin/method combinations", mSnapshot->apiMethodStats.size());
+        LOGTRACE("FlushJob: API method stats sent: %zu plugin/method combinations", mSnapshot->apiMethodStats.size());
     }
 
     void AppGatewayTelemetry::FlushJob::SendApiLatencyStats()

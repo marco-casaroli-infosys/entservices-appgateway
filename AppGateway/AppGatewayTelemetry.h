@@ -501,6 +501,9 @@ namespace Plugin {
         // Overload for raw (non-JSON) payloads such as CSV _split markers — no context prepended, no JSON wrapping
         void SendT2Event(const char* marker, const std::string& rawPayload);
 
+        // Dedicated function for job timing telemetry — omits zero-value context fields
+        void SendT2EventForJobTiming(const std::string& payload, const Exchange::GatewayContext& context);
+
         // Reset counters after reporting
         void ResetHealthStats();
         void ResetApiErrorStats();
