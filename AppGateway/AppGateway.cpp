@@ -19,6 +19,7 @@
 
 #include "AppGateway.h"
 #include "AppGatewayTelemetry.h"
+#include "UtilsAppGatewayTelemetry.h"
 #include <interfaces/IConfiguration.h>
 #include <interfaces/json/JsonData_AppGatewayResolver.h>
 #include <interfaces/json/JAppGatewayResolver.h>
@@ -83,6 +84,11 @@ namespace Plugin {
         mTelemetry = &AppGatewayTelemetry::getInstance();
         mTelemetry->AddRef();
 
+        // Initialize the module-local TelemetryClient so that AGW_TIME_JOB
+        // in AppGatewayImplementation / AppGatewayResponderImplementation jobs
+        // can reach the telemetry singleton via COM-RPC.
+        AGW_TELEMETRY_INIT(service);
+
         mAppGateway = service->Root<Exchange::IAppGatewayResolver>(mConnectionId, COMRPC_CONNECT_TIMEOUT_MS, _T("AppGatewayImplementation"));
        
         if (mAppGateway != nullptr) {
@@ -138,7 +144,10 @@ namespace Plugin {
             connection = service->RemoteConnection(mConnectionId);
         }
 
-        // Deinitialize telemetry first (singleton - just call Deinitialize)
+        // Deinitialize the module-local TelemetryClient (matches AGW_TELEMETRY_INIT in Initialize)
+        AGW_TELEMETRY_DEINIT();
+
+        // Deinitialize telemetry aggregator singleton
         AppGatewayTelemetry::getInstance().Deinitialize();
         if (mTelemetry != nullptr) {
             mTelemetry->Release();
