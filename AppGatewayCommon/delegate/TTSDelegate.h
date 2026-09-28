@@ -125,7 +125,9 @@ public:
         if (nullptr == tts) return Core::ERROR_UNAVAILABLE;
         uint32_t speechid;
         Exchange::ITextToSpeech::TTSErrorDetail status;
+        LOGINFO("RDKEMW Before Speak(): callsign=%s text=%s",callsign.c_str(),text.c_str());
         auto ret = tts->Speak(callsign, text, speechid, status);
+        LOGINFO("RDKEMW After Speak(): callsign=%s text=%s ret=%u speechid=%u status=%u",callsign.c_str(),text.c_str(),ret,speechid,static_cast<uint32_t>(status));
         if (Core::ERROR_NONE == ret) {
             JsonObject response;
             response["speechid"] = speechid;
