@@ -69,6 +69,10 @@ namespace WPEFramework {
                         mCallback = nullptr;
                     }
                     if (nullptr != mParent) {
+                        if (1 == mParent->mActiveJobs.fetch_sub(1, std::memory_order_acq_rel)) {
+                            std::lock_guard<std::mutex> lk(mParent->mJobDrainMutex);
+                            mParent->mJobDrainCv.notify_all();
+                        }
                         mParent->Release();
                     }
                 }
@@ -81,14 +85,9 @@ namespace WPEFramework {
                 virtual void Dispatch()
                 {
                     if (nullptr != mParent) {
-                        mParent->mDelegate->HandleAppEventNotifier(mCallback, mEvent, mListen);
-                        // fetch_sub returns the previous value; if it was 1 the
-                        // counter is now 0 (last in-flight job finished). Lock
-                        // the mutex so the notify wakes up Deinitialize's
-                        // wait — this ensures the signal is never missed.
-                        if (1 == mParent->mActiveJobs.fetch_sub(1, std::memory_order_acq_rel)) {
-                            std::lock_guard<std::mutex> lk(mParent->mJobDrainMutex);
-                            mParent->mJobDrainCv.notify_all();
+                        auto delegate = mParent->GetDelegateSafe();
+                        if (delegate) {
+                            delegate->HandleAppEventNotifier(mCallback, mEvent, mListen);
                         }
                     }
                 }
@@ -138,6 +137,7 @@ namespace WPEFramework {
             void Deactivated(RPC::IRemoteConnection* connection);
             // Helper to get delegate with shutdown check
             std::shared_ptr<SettingsDelegate> GetDelegateSafe() {
+                std::lock_guard<std::mutex> lk(mJobDrainMutex);
                 if (mShuttingDown.load(std::memory_order_acquire)) {
                     return nullptr;
                 }

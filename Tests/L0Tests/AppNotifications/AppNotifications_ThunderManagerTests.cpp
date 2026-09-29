@@ -682,7 +682,7 @@ uint32_t Test_AN_ThunderMgr_Destructor_UnsubscribesAll()
     // Register multiple events
     impl->Subscribe(ctx1, true, FB_SETTINGS_CALLSIGN, "onDestrEvent1");
     impl->Subscribe(ctx2, true, FB_SETTINGS_CALLSIGN, "onDestrEvent2");
-    YieldToWorkerPool();
+    YieldToWorkerPool(500);
 
     L0Test::ANNotificationHandlerFake* handler = shell.GetHandlerFake();
     uint32_t handleCountAfterSub = handler ? handler->handleCount : 0u;
@@ -695,9 +695,9 @@ uint32_t Test_AN_ThunderMgr_Destructor_UnsubscribesAll()
     // Note: impl->Release() with a non-empty list is also safe because the fixed
     // destructor keeps mShell valid during ~ThunderSubscriptionManager execution.
     impl->Subscribe(ctx1, false, FB_SETTINGS_CALLSIGN, "onDestrEvent1");
-    YieldToWorkerPool();
+    YieldToWorkerPool(500);
     impl->Subscribe(ctx2, false, FB_SETTINGS_CALLSIGN, "onDestrEvent2");
-    YieldToWorkerPool();
+    YieldToWorkerPool(500);
 
     if (handler != nullptr) {
         L0Test::ExpectTrue(tr, handler->handleCount >= 4u,

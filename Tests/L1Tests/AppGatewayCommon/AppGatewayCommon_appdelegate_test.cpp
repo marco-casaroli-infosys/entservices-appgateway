@@ -380,7 +380,7 @@ TEST_F(AppDelegateNoStorageTest, EventDelegateDispatchJob_WithValidParent_UsesSh
     ASSERT_FALSE(weakDelegate.expired());
     
     // Destroy the job
-    job = nullptr;
+    job = Core::ProxyType<Core::IDispatch>();
     
     // Now the delegate should be destroyed
     ASSERT_TRUE(weakDelegate.expired());
@@ -414,13 +414,13 @@ TEST_F(AppDelegateNoStorageTest, MultipleEventDelegateDispatchJobs_WithSameParen
     ASSERT_FALSE(weakDelegate.expired());
     
     // Destroy jobs one at a time
-    job1 = nullptr;
+    job1 = Core::ProxyType<Core::IDispatch>();
     ASSERT_FALSE(weakDelegate.expired()); // Still alive due to job2 and job3
     
-    job2 = nullptr;
+    job2 = Core::ProxyType<Core::IDispatch>();
     ASSERT_FALSE(weakDelegate.expired()); // Still alive due to job3
     
-    job3 = nullptr;
+    job3 = Core::ProxyType<Core::IDispatch>();
     // Now the delegate should be destroyed
     ASSERT_TRUE(weakDelegate.expired());
 }
