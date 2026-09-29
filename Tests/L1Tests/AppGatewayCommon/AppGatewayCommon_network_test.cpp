@@ -744,12 +744,18 @@ TEST_F(NetworkNotificationTest, AGC_L1_166_NetworkNotification_DuplicateValue_Di
     wifi.type = Exchange::INetworkManager::INTERFACE_TYPE_WIFI;
     wifi.name = "wlan0";
     wifi.connected = false;
-    ExpectAvailableInterfaces(mockNetwork, {wifi});
-    ExpectAvailableInterfaces(mockNetwork, {wifi});
 
     EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("Network.onConnectedChanged"),
                                ::testing::HasSubstr("\"value\":false"), _)).Times(1);
+
+    // Only one ExpectAvailableInterfaces() is active at a time, same as AGC_L1_164b.
+    // Setting up both before either call fires leaves two WillOnce expectations live
+    // at once, which race under the worker pool and can leak a mock iterator.
+    ExpectAvailableInterfaces(mockNetwork, {wifi});
     capturedNotification->onInterfaceStateChange(Exchange::INetworkManager::INTERFACE_LINK_DOWN, "wlan0");
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+
+    ExpectAvailableInterfaces(mockNetwork, {wifi});
     capturedNotification->onInterfaceStateChange(Exchange::INetworkManager::INTERFACE_LINK_DOWN, "wlan0");
 
     std::this_thread::sleep_for(std::chrono::milliseconds(25));
