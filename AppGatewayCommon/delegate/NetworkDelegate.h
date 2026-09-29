@@ -136,6 +136,8 @@ public:
         return mNetworkManager;
     }
 
+    // "Connected" means at least one interface is physically linked -- not internet
+    // reachability, and not which interface is primary (same definition as device.network below).
     Core::hresult GetNetworkConnected(string &result) {
         result.clear();
 
@@ -146,25 +148,11 @@ public:
             return Core::ERROR_UNAVAILABLE;
         }
 
-        string primaryInterface;
-        Core::hresult rc = networkManager->GetPrimaryInterface(primaryInterface);
-        if (rc != Core::ERROR_NONE) {
-            LOGERR("Failed to get primary interface on NetworkManager, error: %u", rc);
+        bool connected = false;
+        if (IsAnyInterfaceConnected(networkManager, connected) != Core::ERROR_NONE) {
+            LOGERR("Failed to get available interfaces on NetworkManager");
             ErrorUtils::CustomInternal("Failed to get NetworkInfo", result);
             return Core::ERROR_GENERAL;
-        }
-
-        if (primaryInterface.empty()) {
-            result = "false";
-            return Core::ERROR_NONE;
-        }
-
-        // A non-empty primary-interface name isn't enough on its own -- it can persist
-        // for a moment after that interface's own link drops. Check its actual link
-        // state instead of trusting the name's mere presence.
-        bool connected = false;
-        if (GetInterfaceConnected(primaryInterface, connected) != Core::ERROR_NONE) {
-            LOGERR("Primary interface \"%s\" not found in GetAvailableInterfaces()", primaryInterface.c_str());
         }
 
         result = connected ? "true" : "false";
@@ -174,17 +162,9 @@ public:
     // PUBLIC_INTERFACE
     Core::hresult GetInternetConnectionStatus(std::string &result)
     {
-        /**
-         * Retrieve the first connected interface from GetAvailableInterfaces
-         * Transform: Map connected interfaces and return type in lowercase with state
-         * Transform logic: .result.interfaces| .[] | select(."connected"==true) |
-         *                  {type: .interface, state: map_connected(.connected)} |
-         *                  .type |= ascii_downcase | [., inputs][0]
-         */
         LOGINFO("GetInternetConnectionStatus via NetworkManager");
         result.clear();
 
-        // Get NetworkManager interface
         Exchange::INetworkManager *networkManager = GetNetworkManagerInterface();
         if (networkManager == nullptr)
         {
@@ -193,86 +173,43 @@ public:
             return Core::ERROR_UNAVAILABLE;
         }
 
-        // Get available interfaces
-        Exchange::INetworkManager::IInterfaceDetailsIterator *interfaces = nullptr;
-        uint32_t rc = networkManager->GetAvailableInterfaces(interfaces);
-
-        if (rc != Core::ERROR_NONE)
+        Exchange::INetworkManager::InterfaceDetails iface{};
+        bool found = false;
+        if (FindConnectedInterface(networkManager, iface, found) != Core::ERROR_NONE)
         {
-            LOGERR("GetAvailableInterfaces call failed with error: %u", rc);
+            LOGERR("GetAvailableInterfaces call failed");
             result = "{\"error\":\"Failed to get available interfaces\"}";
             return Core::ERROR_GENERAL;
         }
 
-        if (interfaces == nullptr)
+        if (!found)
         {
-            LOGERR("GetAvailableInterfaces returned null iterator");
             result = "{}";
+            LOGINFO("No connected interface found");
             return Core::ERROR_NONE;
         }
 
-        // Iterate through interfaces and find the first connected one
-        Exchange::INetworkManager::InterfaceDetails iface{};
-        bool foundConnected = false;
-
-        while (interfaces->Next(iface))
-        {
-            if (iface.connected)
-            {
-                // Get interface type string - map enum to string manually
-                std::string interfaceType;
-                switch (iface.type) {
-                    case Exchange::INetworkManager::INTERFACE_TYPE_ETHERNET:
-                        interfaceType = "ethernet";
-                        break;
-                    case Exchange::INetworkManager::INTERFACE_TYPE_WIFI:
-                        interfaceType = "wifi";
-                        break;
-                    default:
-                        interfaceType = "unknown";
-                        break;
-                }
-
-                // Build the result JSON: {"type": "<type>", "state": "connected"}
-                std::ostringstream jsonStream;
-                jsonStream << "{\"type\":\"" << interfaceType
-                           << "\",\"state\":\"connected\"}";
-                result = jsonStream.str();
-
-                LOGINFO("Found connected interface: %s", result.c_str());
-                foundConnected = true;
-                break;
-            }
+        std::string interfaceType;
+        switch (iface.type) {
+            case Exchange::INetworkManager::INTERFACE_TYPE_ETHERNET: interfaceType = "ethernet"; break;
+            case Exchange::INetworkManager::INTERFACE_TYPE_WIFI:     interfaceType = "wifi";     break;
+            default:                                                 interfaceType = "unknown";  break;
         }
 
-        // Release the iterator
-        interfaces->Release();
-
-        if (!foundConnected)
-        {
-            // No connected interface found
-            result = "{}";
-            LOGINFO("No connected interface found");
-        }
-
+        std::ostringstream jsonStream;
+        jsonStream << "{\"type\":\"" << interfaceType << "\",\"state\":\"connected\"}";
+        result = jsonStream.str();
+        LOGINFO("Found connected interface: %s", result.c_str());
         return Core::ERROR_NONE;
     }
 
 private:
-    // Looks up `interfaceName` (a device name like "eth0"/"wlan0", the same
-    // representation GetPrimaryInterface() and the notification callbacks use) in
-    // GetAvailableInterfaces() and reports its own link state. This is the single
-    // source of truth for "is this specific interface actually connected" — a
-    // primary-interface name alone doesn't tell us that (it can persist briefly
-    // after that interface's own link drops, or lag briefly after it comes up).
-    Core::hresult GetInterfaceConnected(const string &interfaceName, bool &connected)
+    // Finds the first interface GetAvailableInterfaces() reports as connected.
+    // `found` is false (not an error) if none are connected or the list is empty.
+    Core::hresult FindConnectedInterface(Exchange::INetworkManager *networkManager,
+                                         Exchange::INetworkManager::InterfaceDetails &iface, bool &found)
     {
-        connected = false;
-
-        Exchange::INetworkManager *networkManager = GetNetworkManagerInterface();
-        if (networkManager == nullptr) {
-            return Core::ERROR_UNAVAILABLE;
-        }
+        found = false;
 
         Exchange::INetworkManager::IInterfaceDetailsIterator *interfaces = nullptr;
         Core::hresult rc = networkManager->GetAvailableInterfaces(interfaces);
@@ -280,27 +217,27 @@ private:
             return rc;
         }
         if (interfaces == nullptr) {
-            return Core::ERROR_GENERAL;
+            return Core::ERROR_NONE;
         }
 
-        bool found = false;
-        Exchange::INetworkManager::InterfaceDetails iface{};
         while (interfaces->Next(iface)) {
-            if (StringUtils::toLower(iface.name) == StringUtils::toLower(interfaceName)) {
-                connected = iface.connected;
+            if (iface.connected) {
                 found = true;
                 break;
             }
         }
         interfaces->Release();
-
-        return found ? Core::ERROR_NONE : Core::ERROR_GENERAL;
+        return Core::ERROR_NONE;
     }
 
-    // Both onActiveInterfaceChange and onInterfaceStateChange can react to the same
-    // real transition (a reconnect changes both the primary interface's identity and
-    // its link state), so route dispatch through here to avoid firing the event twice
-    // with the same value.
+    Core::hresult IsAnyInterfaceConnected(Exchange::INetworkManager *networkManager, bool &connected)
+    {
+        Exchange::INetworkManager::InterfaceDetails iface{};
+        return FindConnectedInterface(networkManager, iface, connected);
+    }
+
+    // Skips re-dispatching the same value, e.g. if the link flaps without changing
+    // the overall "any interface connected" result.
     void DispatchConnectedChanged(bool connected)
     {
         {
@@ -320,23 +257,11 @@ private:
         NetworkNotificationHandler(NetworkDelegate &parent) : mParent(parent), registered(false) {}
         ~NetworkNotificationHandler() {}
 
-        void onActiveInterfaceChange(const string prevActiveInterface, const string currentActiveInterface) override
-        {
-            LOGDBG("onActiveInterfaceChange: prev=%s, current=%s", prevActiveInterface.c_str(), currentActiveInterface.c_str());
-            bool connected = false;
-            if (!currentActiveInterface.empty()) {
-                mParent.GetInterfaceConnected(currentActiveInterface, connected);
-            }
-            mParent.DispatchConnectedChanged(connected);
-        }
+        // onActiveInterfaceChange isn't overridden -- which interface is primary
+        // doesn't affect Network.connected, so it falls back to the no-op default.
 
-        // NetworkManager's link-carrier notification -- fires independent of which
-        // interface is primary, so Network.connected only reacts when the primary
-        // interface's own link is what changed (a secondary interface flapping
-        // shouldn't move it). This is what makes link-only flaps observable: previously
-        // only onActiveInterfaceChange (primary-interface identity change) was wired
-        // up, which never fires when the primary interface stays the same and only its
-        // link drops.
+        // Recomputes "any interface connected" rather than trusting this one interface's
+        // state -- e.g. eth0 going down shouldn't report false while wlan0 is still up.
         void onInterfaceStateChange(const Exchange::INetworkManager::InterfaceState state, const string interface) override
         {
             LOGDBG("onInterfaceStateChange: state=%d, interface=%s", state, interface.c_str());
@@ -346,16 +271,17 @@ private:
                 return;
             }
 
-            string primaryInterface;
             Exchange::INetworkManager *networkManager = mParent.GetNetworkManagerInterface();
-            if (networkManager == nullptr || networkManager->GetPrimaryInterface(primaryInterface) != Core::ERROR_NONE) {
-                return;
-            }
-            if (StringUtils::toLower(interface) != StringUtils::toLower(primaryInterface)) {
+            if (networkManager == nullptr) {
                 return;
             }
 
-            mParent.DispatchConnectedChanged(state == Exchange::INetworkManager::INTERFACE_LINK_UP);
+            bool connected = false;
+            if (mParent.IsAnyInterfaceConnected(networkManager, connected) != Core::ERROR_NONE) {
+                return;
+            }
+
+            mParent.DispatchConnectedChanged(connected);
         }
 
         void onInternetStatusChange(const Exchange::INetworkManager::InternetStatus prevState, const Exchange::INetworkManager::InternetStatus currState, const string interface)
