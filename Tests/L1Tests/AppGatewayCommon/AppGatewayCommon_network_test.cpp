@@ -666,6 +666,47 @@ TEST_F(NetworkNotificationTest, AGC_L1_164_NetworkNotification_onInterfaceStateC
     std::this_thread::sleep_for(std::chrono::milliseconds(25));
 }
 
+TEST_F(NetworkNotificationTest, AGC_L1_164b_NetworkNotification_onInterfaceStateChange_SecondaryInterfaceDown_AlreadyConnected_NoDispatch)
+{
+    MockEmitter* emitter = new MockEmitter();
+    heapEmitters.push_back(emitter);
+    emitter->AddRef();
+
+    bool status = false;
+    plugin.HandleAppEventNotifier(emitter, "Network.onConnectedChanged", true, status);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    ASSERT_NE(capturedNotification, nullptr);
+
+    Exchange::INetworkManager::InterfaceDetails eth;
+    eth.type = Exchange::INetworkManager::INTERFACE_TYPE_ETHERNET;
+    eth.name = "eth0";
+    eth.connected = true;
+
+    Exchange::INetworkManager::InterfaceDetails wifiUp;
+    wifiUp.type = Exchange::INetworkManager::INTERFACE_TYPE_WIFI;
+    wifiUp.name = "wlan0";
+    wifiUp.connected = true;
+
+    Exchange::INetworkManager::InterfaceDetails wifiDown = wifiUp;
+    wifiDown.connected = false;
+
+    // Establish a known baseline of Network.connected == true first.
+    ExpectAvailableInterfaces(mockNetwork, {eth, wifiUp});
+
+    // Only the baseline-establishing dispatch below should ever fire. wlan0 going
+    // down afterwards must not re-dispatch: eth0 keeps the getter's answer at
+    // true both before and after, so nothing the getter reports has changed.
+    EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("Network.onConnectedChanged"),
+                               ::testing::HasSubstr("\"value\":true"), _)).Times(1);
+    capturedNotification->onInterfaceStateChange(Exchange::INetworkManager::INTERFACE_LINK_UP, "eth0");
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+
+    ExpectAvailableInterfaces(mockNetwork, {eth, wifiDown});
+    capturedNotification->onInterfaceStateChange(Exchange::INetworkManager::INTERFACE_LINK_DOWN, "wlan0");
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+}
+
 TEST_F(NetworkNotificationTest, AGC_L1_165_NetworkNotification_onInterfaceStateChange_IrrelevantState_DoesNotDispatch)
 {
     MockEmitter* emitter = new MockEmitter();
