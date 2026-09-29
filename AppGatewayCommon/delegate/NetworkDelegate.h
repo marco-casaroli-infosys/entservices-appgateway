@@ -31,6 +31,7 @@
 #include <set>
 #include "ObjectUtils.h"
 #include "UtilsFirebolt.h"
+#include <functional>
 #include <mutex>
 
 using namespace WPEFramework;
@@ -251,17 +252,48 @@ private:
         Dispatch("Network.onConnectedChanged", ObjectUtils::CreateBooleanJsonString("value", connected));
     }
 
+    // Runs work on a worker pool thread. onInterfaceStateChange uses this to get
+    // off the NetworkManager notification thread before calling back into
+    // NetworkManager, same fix as RDKEMW-24422 (see SystemDelegate.h).
+    class EXTERNAL WorkerPoolTask : public Core::IDispatch
+    {
+    public:
+        explicit WorkerPoolTask(std::function<void()> work)
+            : _work(std::move(work))
+        {
+        }
+        WorkerPoolTask() = delete;
+        WorkerPoolTask(const WorkerPoolTask&) = delete;
+        WorkerPoolTask& operator=(const WorkerPoolTask&) = delete;
+        ~WorkerPoolTask() override = default;
+
+        void Dispatch() override
+        {
+            _work();
+        }
+
+    private:
+        std::function<void()> _work;
+    };
+
+    static void PostToWorkerPool(std::function<void()> work)
+    {
+        Core::IWorkerPool::Instance().Submit(
+            Core::ProxyType<Core::IDispatch>(Core::ProxyType<WorkerPoolTask>::Create(std::move(work))));
+    }
+
     class NetworkNotificationHandler : public Exchange::INetworkManager::INotification
     {
     public:
         NetworkNotificationHandler(NetworkDelegate &parent) : mParent(parent), registered(false) {}
         ~NetworkNotificationHandler() {}
 
-        // onActiveInterfaceChange isn't overridden -- which interface is primary
+        // onActiveInterfaceChange isn't overridden here. Which interface is primary
         // doesn't affect Network.connected, so it falls back to the no-op default.
 
-        // Recomputes "any interface connected" rather than trusting this one interface's
-        // state -- e.g. eth0 going down shouldn't report false while wlan0 is still up.
+        // Recomputes "any interface connected" instead of trusting just this one
+        // interface's new state, e.g. eth0 going down shouldn't report false if
+        // wlan0 is still up.
         void onInterfaceStateChange(const Exchange::INetworkManager::InterfaceState state, const string interface) override
         {
             LOGDBG("onInterfaceStateChange: state=%d, interface=%s", state, interface.c_str());
@@ -271,17 +303,20 @@ private:
                 return;
             }
 
-            Exchange::INetworkManager *networkManager = mParent.GetNetworkManagerInterface();
-            if (networkManager == nullptr) {
-                return;
-            }
+            // Re-query and dispatch on a worker-pool thread, not on this notification thread
+            mParent.PostToWorkerPool([this]() {
+                Exchange::INetworkManager *networkManager = mParent.GetNetworkManagerInterface();
+                if (networkManager == nullptr) {
+                    return;
+                }
 
-            bool connected = false;
-            if (mParent.IsAnyInterfaceConnected(networkManager, connected) != Core::ERROR_NONE) {
-                return;
-            }
+                bool connected = false;
+                if (mParent.IsAnyInterfaceConnected(networkManager, connected) != Core::ERROR_NONE) {
+                    return;
+                }
 
-            mParent.DispatchConnectedChanged(connected);
+                mParent.DispatchConnectedChanged(connected);
+            });
         }
 
         void onInternetStatusChange(const Exchange::INetworkManager::InternetStatus prevState, const Exchange::INetworkManager::InternetStatus currState, const string interface)
