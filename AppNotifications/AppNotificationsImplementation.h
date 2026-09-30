@@ -101,6 +101,10 @@ namespace Plugin {
 
                 void Unsubscribe(const string& module, const string& event);
 
+                // Unregisters every currently registered notification. Must be called
+                // while the owning implementation's mShell/mEmitter are still valid.
+                void UnsubscribeAll();
+
                 bool HandleNotifier(const string& module, const string& event, const bool& listen);
 
                 // Add a method to lock the mThunderSubscriberMutex mutex and add an entry to mRegisteredNotifications
@@ -160,13 +164,17 @@ namespace Plugin {
         {
             public:
                 SubscriberJob(AppNotificationsImplementation* delegate, const string& module, const string& event, const bool subscribe)
-                    : mParent(*delegate), mEvent(event), mModule(module), mSubscribe(subscribe) {}
+                    : mParent(*delegate), mEvent(event), mModule(module), mSubscribe(subscribe)
+                {
+                    mParent.AddRef();
+                }
 
                 SubscriberJob() = delete;
                 SubscriberJob(const SubscriberJob &) = delete;
                 SubscriberJob &operator=(const SubscriberJob &) = delete;
                 ~SubscriberJob()
                 {
+                    mParent.Release();
                 }
 
                 static Core::ProxyType<Core::IDispatch> Create(AppNotificationsImplementation *parent,
@@ -195,13 +203,17 @@ namespace Plugin {
         {
             public:
                 EmitJob(AppNotificationsImplementation* delegate, const string& event, const string& payload, const string& appId)
-                    : mParent(*delegate), mEvent(event), mPayload(payload), mAppId(appId) {}
+                    : mParent(*delegate), mEvent(event), mPayload(payload), mAppId(appId)
+                {
+                    mParent.AddRef();
+                }
 
                 EmitJob() = delete;
                 EmitJob(const EmitJob &) = delete;
                 EmitJob &operator=(const EmitJob &) = delete;
                 ~EmitJob()
                 {
+                    mParent.Release();
                 }
 
                 static Core::ProxyType<Core::IDispatch> Create(AppNotificationsImplementation *parent,
@@ -247,7 +259,15 @@ namespace Plugin {
         };
 
     private:
+        // Returns true if Stop() has been called; safe to call from any thread.
+        bool IsStopping() const;
+        // Returns an AddRef'd shell pointer if the implementation is still active, otherwise nullptr.
+        // Caller owns the returned reference and must Release() it.
+        PluginHost::IShell* GetActiveShell() const;
+
+        mutable std::mutex mAdminLock;
         bool mStopping;
+        bool mStopInitiated = false;
         PluginHost::IShell* mShell;
         SubscriberMap mSubMap;
         ThunderSubscriptionManager mThunderManager;

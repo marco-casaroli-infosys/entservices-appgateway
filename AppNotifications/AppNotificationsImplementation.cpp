@@ -51,24 +51,56 @@ namespace WPEFramework
 
         void AppNotificationsImplementation::Stop()
         {
-            if (mStopping) {
-                return;
+            {
+                std::lock_guard<std::mutex> lock(mAdminLock);
+                if (mStopInitiated) {
+                    return;
+                }
+                mStopInitiated = true;
             }
 
-            mStopping = true;
+            // Unsubscribe from all registered Thunder notifications while mShell and
+            // mEmitter are still valid. This must happen before mStopping is set,
+            // since HandleNotifier()/GetActiveShell() short-circuit once the
+            // implementation is marked stopped, which would otherwise leave target
+            // plugins holding a callback into a soon-to-be-destroyed mEmitter.
+            mThunderManager.UnsubscribeAll();
 
-            if (mShell != nullptr)
+            PluginHost::IShell* shellToRelease = nullptr;
             {
-                mShell->Release();
+                std::lock_guard<std::mutex> lock(mAdminLock);
+                mStopping = true;
+                shellToRelease = mShell;
                 mShell = nullptr;
             }
+
+            if (shellToRelease != nullptr)
+            {
+                shellToRelease->Release();
+            }
+        }
+
+        bool AppNotificationsImplementation::IsStopping() const
+        {
+            std::lock_guard<std::mutex> lock(mAdminLock);
+            return mStopping;
+        }
+
+        PluginHost::IShell* AppNotificationsImplementation::GetActiveShell() const
+        {
+            std::lock_guard<std::mutex> lock(mAdminLock);
+            if (mStopping || mShell == nullptr) {
+                return nullptr;
+            }
+            mShell->AddRef();
+            return mShell;
         }
 
         Core::hresult AppNotificationsImplementation::Subscribe(const Exchange::IAppNotifications::AppNotificationContext &context /* @in */,
                                             bool listen /* @in */,
                                             const string &module /* @in */,
                                             const string &event /* @in */) {
-            if (mStopping) {
+            if (IsStopping()) {
                 return Core::ERROR_ILLEGAL_STATE;
             }
             LOGTRACE("Subscribe [requestId=%d appId=%s connectionId=%d] register=%s, module=%s, event=%s, version=%s",
@@ -101,7 +133,7 @@ namespace WPEFramework
         Core::hresult AppNotificationsImplementation::Emit(const string &event /* @in */,
                                     const string &payload /* @in @opaque */,
                                     const string &appId /* @in */) {
-            if (mStopping) {
+            if (IsStopping()) {
                 return Core::ERROR_ILLEGAL_STATE;
             }
 
@@ -112,7 +144,7 @@ namespace WPEFramework
         }
 
         Core::hresult AppNotificationsImplementation::Cleanup(const uint32_t connectionId /* @in */, const string &origin /* @in */) {
-            if (mStopping) {
+            if (IsStopping()) {
                 return Core::ERROR_NONE;
             }
 
@@ -142,8 +174,11 @@ namespace WPEFramework
             LOGINFO("Configuring AppNotifications");
             uint32_t result = Core::ERROR_NONE;
             ASSERT(shell != nullptr);
-            mShell = shell;
-            mShell->AddRef();
+            {
+                std::lock_guard<std::mutex> lock(mAdminLock);
+                mShell = shell;
+                mShell->AddRef();
+            }
             return result;
         }
 
@@ -184,7 +219,7 @@ namespace WPEFramework
         }
 
         void AppNotificationsImplementation::SubscriberMap::EventUpdate(const string& key, const string& payloadStr, const string& appId ) {
-            if (mParent.mStopping) {
+            if (mParent.IsStopping()) {
                 return;
             }
 
@@ -225,7 +260,13 @@ namespace WPEFramework
         void AppNotificationsImplementation::SubscriberMap::DispatchToGateway(const string& key, const Exchange::IAppNotifications::AppNotificationContext& context, const string& payload) {
             Core::SafeSyncType<Core::CriticalSection> lock(mAppGatewayLock);
             if (nullptr == mAppGateway) {
-                mAppGateway = mParent.mShell->QueryInterfaceByCallsign<Exchange::IAppGatewayResponder>(APP_GATEWAY_CALLSIGN);
+                PluginHost::IShell* shell = mParent.GetActiveShell();
+                if (nullptr == shell) {
+                    LOGERR("Shell not available, cannot acquire AppGateway Responder interface");
+                    return;
+                }
+                mAppGateway = shell->QueryInterfaceByCallsign<Exchange::IAppGatewayResponder>(APP_GATEWAY_CALLSIGN);
+                shell->Release();
                 if (nullptr == mAppGateway) {
                     LOGERR("Failed to get AppGateway Responder interface");
                     return;
@@ -240,7 +281,13 @@ namespace WPEFramework
         void AppNotificationsImplementation::SubscriberMap::DispatchToLaunchDelegate(const string& key, const Exchange::IAppNotifications::AppNotificationContext& context, const string& payload) {
             Core::SafeSyncType<Core::CriticalSection> lock(mInternalGatewayNotifierLock);
             if (nullptr == mInternalGatewayNotifier) {
-                mInternalGatewayNotifier = mParent.mShell->QueryInterfaceByCallsign<Exchange::IAppGatewayResponder>(INTERNAL_GATEWAY_CALLSIGN);
+                PluginHost::IShell* shell = mParent.GetActiveShell();
+                if (nullptr == shell) {
+                    LOGERR("Shell not available, cannot acquire InternalGatewayNotifier interface");
+                    return;
+                }
+                mInternalGatewayNotifier = shell->QueryInterfaceByCallsign<Exchange::IAppGatewayResponder>(INTERNAL_GATEWAY_CALLSIGN);
+                shell->Release();
                 if (nullptr == mInternalGatewayNotifier) {
                     LOGERR("Failed to get InternalGatewayNotifier interface");
                     return;
@@ -253,6 +300,10 @@ namespace WPEFramework
         }
 
         AppNotificationsImplementation::ThunderSubscriptionManager::~ThunderSubscriptionManager() {
+            UnsubscribeAll();
+        }
+
+        void AppNotificationsImplementation::ThunderSubscriptionManager::UnsubscribeAll() {
             // Copy notifications to avoid holding the lock during external calls
             std::vector<NotificationKey> notificationsCopy;
             {
@@ -293,13 +344,16 @@ namespace WPEFramework
         }
 
         bool AppNotificationsImplementation::ThunderSubscriptionManager::HandleNotifier(const string& module, const string& event, const bool& listen) {
-            if (mParent.mStopping) {
+            PluginHost::IShell* shell = mParent.GetActiveShell();
+            if (nullptr == shell) {
+                LOGERR("Shell not available, cannot handle notifier for module=%s", module.c_str());
                 return false;
             }
 
             // Check if Plugins is activated before making a request
             bool status = false;
-            Exchange::IAppNotificationHandler *internalNotifier = mParent.mShell->QueryInterfaceByCallsign<Exchange::IAppNotificationHandler>(module);
+            Exchange::IAppNotificationHandler *internalNotifier = shell->QueryInterfaceByCallsign<Exchange::IAppNotificationHandler>(module);
+            shell->Release();
             if (internalNotifier != nullptr) {
                 if (Core::ERROR_NONE == internalNotifier->HandleAppEventNotifier(&mParent.mEmitter, event, listen, status)) {
                     LOGTRACE("Notifier status for %s:%s is %s", module.c_str(), event.c_str(), status ? "true" : "false");
