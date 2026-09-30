@@ -1,5 +1,18 @@
 # entservices-appgateway
 
+## Generated subsystem documentation
+
+This repository is an RDK/Thunder plugin suite implementing a Firebolt-compatible application gateway. The following self-contained guides document every discovered source subsystem:
+
+- [AppGateway](docs/appgateway.md) — WebSocket ingress/egress, resolver, responder, context routing, and telemetry.
+- [AppGatewayCommon](docs/appgateway-common.md) — device/service business logic, authentication, handler routing, and delegates.
+- [AppNotifications](docs/appnotifications.md) — Thunder event subscriptions, subscriber contexts, and fan-out.
+- [AppActions](docs/appactions.md) — app-to-app action dispatch and asynchronous notifications.
+- [Shared helpers](helpers/helpers.md) — context, WebSocket, telemetry, JSON, logging, and utility headers.
+- [Testing and build](docs/testing-and-build.md) — CMake selection, mocks, L0/L1/L2 tests, coverage, and build limits.
+
+Each guide contains purpose, architecture, file/class walkthroughs, configuration, workflows, Mermaid diagrams, quality analysis, and a beginner-to-expert learning path. Source or platform information unavailable in this workspace is called out explicitly in the relevant guide.
+
 > **License:** Apache 2.0 — Copyright 2023–2025 Comcast Cable Communications Management, LLC / RDK Management
 
 `entservices-appgateway` is an RDK / WPEFramework (Thunder) plugin suite that implements the **Firebolt-compatible API Gateway** for applications running on RDK devices. It replaces the legacy Ripple Gateway and provides a single, authenticated WebSocket entry-point for all app-facing JSON-RPC calls.
