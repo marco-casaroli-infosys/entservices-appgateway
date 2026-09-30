@@ -21,6 +21,7 @@
 #include "Module.h"
 #include <interfaces/IAppGateway.h>
 #include <core/core.h>
+#include "UtilsLogging.h"
 #include <map>
 #include <atomic>
 #include <chrono>

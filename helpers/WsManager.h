@@ -307,7 +307,7 @@ public:
         // New Method add message to the _queue
         void AddToPending(Core::ProxyType<Core::JSONRPC::Message>& element)
         {
-            std::lock_guard<std::mutex> lock(_qLock);
+            Core::SafeSyncType<Core::CriticalSection> lock(_qLock);
             if (_queue.Count() == 10 ) {
                 LOGERR("Queue full for %d processing error for first entry", _id);
                 // Remove the first entry
@@ -555,7 +555,7 @@ public:
     {
         try
         {
-            mChannel = std::make_unique<WebSocketChannel>(remoteNode, *this);
+            mChannel.reset(new WebSocketChannel(remoteNode, *this));
 
             LOGINFO("WebSocket channel started successfully on %s %d", remoteNode.HostAddress().c_str(), remoteNode.PortNumber());
             return true;
