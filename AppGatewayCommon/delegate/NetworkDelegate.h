@@ -303,8 +303,12 @@ private:
                 return;
             }
 
-            // Re-query and dispatch on a worker-pool thread, not on this notification thread
+            // Re-query and dispatch on a worker-pool thread, not on this notification thread.
+            // Serialize the query and dispatch as one unit so two rapid link events can't
+            // interleave and deliver a stale value last (query1, query2, dispatch2, dispatch1).
             mParent.PostToWorkerPool([this]() {
+                std::lock_guard<std::mutex> lock(mParent.mQueryDispatchMutex);
+
                 Exchange::INetworkManager *networkManager = mParent.GetNetworkManagerInterface();
                 if (networkManager == nullptr) {
                     return;
@@ -371,6 +375,8 @@ private:
     bool mLastConnectedKnown = false;
     bool mLastConnected = false;
     std::mutex mLastConnectedMutex;
+    // Serializes onInterfaceStateChange's query-and-dispatch step across worker-pool tasks.
+    std::mutex mQueryDispatchMutex;
 };
 
 #endif // __NETWORKDELEGATE_H__
