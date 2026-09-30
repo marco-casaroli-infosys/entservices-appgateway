@@ -308,7 +308,7 @@ public:
         void AddToPending(Core::ProxyType<Core::JSONRPC::Message>& element)
         {
             Core::SafeSyncType<Core::CriticalSection> lock(_qLock);
-            if (_queue.Count() == 10 ) {
+            if (QUEUE_BUFFER_SIZE == _queue.Count()) {
                 LOGERR("Queue full for %d processing error for first entry", _id);
                 // Remove the first entry
                 auto firstElement = _queue[0];
