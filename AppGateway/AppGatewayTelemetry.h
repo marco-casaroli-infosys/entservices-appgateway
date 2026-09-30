@@ -746,7 +746,7 @@ namespace Plugin {
                                         const uint32_t failedCalls,
                                         const uint32_t pendingCount)
         {
-            if (totalCalls == 0 && websocketConnections == 0 && pendingCount == 0) {
+            if (0 == totalCalls && 0 == websocketConnections && 0 == pendingCount) {
                 LOGINFO("No health stats to report");
                 return;
             }
