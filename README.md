@@ -4,10 +4,10 @@
 
 This repository is an RDK/Thunder plugin suite implementing a Firebolt-compatible application gateway. The following self-contained guides document every discovered source subsystem:
 
-- [AppGateway](docs/appgateway.md) — WebSocket ingress/egress, resolver, responder, context routing, and telemetry.
-- [AppGatewayCommon](docs/appgateway-common.md) — device/service business logic, authentication, handler routing, and delegates.
-- [AppNotifications](docs/appnotifications.md) — Thunder event subscriptions, subscriber contexts, and fan-out.
-- [AppActions](docs/appactions.md) — app-to-app action dispatch and asynchronous notifications.
+- [AppGateway](AppGateway/AppGateway.md) — WebSocket ingress/egress, resolver, responder, context routing, and telemetry.
+- [AppGatewayCommon](AppGatewayCommon/AppGatewayCommon.md) — device/service business logic, authentication, handler routing, and delegates.
+- [AppNotifications](AppNotifications/AppNotifications.md) — Thunder event subscriptions, subscriber contexts, and fan-out.
+- [AppActions](AppActions/AppActions.md) — app-to-app action dispatch and asynchronous notifications.
 - [Shared helpers](helpers/helpers.md) — context, WebSocket, telemetry, JSON, logging, and utility headers.
 - [Testing and build](docs/testing-and-build.md) — CMake selection, mocks, L0/L1/L2 tests, coverage, and build limits.
 
@@ -36,14 +36,15 @@ entservices-appgateway/
 ├── AppActions/              # Thunder plugin — App-to-app action/intent dispatch
 │   ├── AppActions.md        # Plugin documentation
 │   └── tests/               # Unit & integration test stubs
-├── helpers/                 # Shared headers (WsManager, ContextUtils, logging, utils)
+├── helpers/                 # Shared headers and helpers documentation
+│   └── helpers.md           # Shared helper subsystem guide
 ├── cmake/                   # CMake helper scripts
 ├── Tests/                   # L0 / L1 / L2 test trees + mocks + Copilot helpers
 │   ├── Testing.md           # Test infrastructure documentation
 │   ├── docs/                # Per-plugin test documentation (L0 & L1)
 │   ├── L0Tests/             # L0 branch-coverage tests
 │   └── CopilotFiles/        # AI-assisted test generation instructions
-├── docs/                    # API reference & platform documentation
+├── docs/                    # API, platform, subsystem, and build documentation
 ├── .github/                 # GitHub Copilot & code-review instructions
 ├── DESIGN.md                # Authoritative system-level design narrative
 ├── CONTRIBUTING.md          # Contribution guidelines
@@ -115,6 +116,22 @@ See [docs/BuildSystem.md](docs/BuildSystem.md) for the full flag reference.
 | [docs/API_REFERENCE.md](docs/API_REFERENCE.md) | App Gateway API reference — interfaces and exposed APIs |
 | [docs/RDK8.md](docs/RDK8.md) | RDK8 Firebolt API support design documentation |
 | [docs/BuildSystem.md](docs/BuildSystem.md) | CMake build flags, configuration files, install targets |
+
+#### Generated subsystem guides
+
+| Document | Description |
+|---|---|
+| [AppGateway/AppGateway.md](AppGateway/AppGateway.md) | AppGateway WebSocket ingress/egress, routing, context handling, and telemetry |
+| [AppGatewayCommon/AppGatewayCommon.md](AppGatewayCommon/AppGatewayCommon.md) | AppGatewayCommon business logic, authentication, routing, and delegates |
+| [AppNotifications/AppNotifications.md](AppNotifications/AppNotifications.md) | AppNotifications subscriptions, event fan-out, and cleanup |
+| [AppActions/AppActions.md](AppActions/AppActions.md) | AppActions dispatch, callbacks, and asynchronous delivery |
+| [docs/testing-and-build.md](docs/testing-and-build.md) | CMake selection, test layers, mocks, coverage, and build limits |
+
+### `helpers/`
+
+| Document | Description |
+|---|---|
+| [helpers/helpers.md](helpers/helpers.md) | Shared context, WebSocket, telemetry, JSON, logging, and utility helpers |
 
 ---
 
