@@ -31,6 +31,8 @@
 #include <set>
 #include "ObjectUtils.h"
 #include "UtilsFirebolt.h"
+#include <atomic>
+#include <condition_variable>
 #include <functional>
 #include <mutex>
 
@@ -54,22 +56,32 @@ public:
 
     ~NetworkDelegate()
     {
-        Core::SafeSyncType<Core::CriticalSection> lock(mNetworkManagerLock);
-        if (nullptr != mNetworkManager)
+        // Unregister first so no new jobs get queued, then wait for any already
+        // running, then release. Wrong order leaves a window for a use-after-free.
         {
+            Core::SafeSyncType<Core::CriticalSection> lock(mNetworkManagerLock);
+            if (nullptr != mNetworkManager)
             {
-                std::lock_guard<std::mutex> lock(mRegistrationMutex);
+                std::lock_guard<std::mutex> regLock(mRegistrationMutex);
                 if (mNotificationHandler.GetRegistered())
                 {
                     mNetworkManager->Unregister(&mNotificationHandler);
                     mNotificationHandler.SetRegistered(false);
                 }
             }
+        }
+
+        {
+            std::unique_lock<std::mutex> lk(mJobDrainMutex);
+            mJobDrainCv.wait(lk, [this] { return mActiveWorkerJobs.load(std::memory_order_acquire) == 0; });
+        }
+
+        Core::SafeSyncType<Core::CriticalSection> lock(mNetworkManagerLock);
+        if (nullptr != mNetworkManager)
+        {
             mNetworkManager->Release();
             mNetworkManager = nullptr;
         }
-
-        
     }
 
     bool HandleSubscription(Exchange::IAppNotificationHandler::IEmitter *cb, const string &event, const bool listen)
@@ -282,6 +294,26 @@ private:
             Core::ProxyType<Core::IDispatch>(Core::ProxyType<WorkerPoolTask>::Create(std::move(work))));
     }
 
+    // Decrements mActiveWorkerJobs on scope exit and wakes the drain wait. Caller
+    // must increment before posting the job.
+    class JobDrainGuard
+    {
+    public:
+        explicit JobDrainGuard(NetworkDelegate &parent) : mParent(parent) {}
+        JobDrainGuard(const JobDrainGuard&) = delete;
+        JobDrainGuard& operator=(const JobDrainGuard&) = delete;
+        ~JobDrainGuard()
+        {
+            if (1 == mParent.mActiveWorkerJobs.fetch_sub(1, std::memory_order_acq_rel)) {
+                std::lock_guard<std::mutex> lk(mParent.mJobDrainMutex);
+                mParent.mJobDrainCv.notify_all();
+            }
+        }
+
+    private:
+        NetworkDelegate &mParent;
+    };
+
     class NetworkNotificationHandler : public Exchange::INetworkManager::INotification
     {
     public:
@@ -303,10 +335,12 @@ private:
                 return;
             }
 
-            // Re-query and dispatch on a worker-pool thread, not on this notification thread.
-            // Serialize the query and dispatch as one unit so two rapid link events can't
-            // interleave and deliver a stale value last (query1, query2, dispatch2, dispatch1).
+            // Query and dispatch on a worker-pool thread, not this notification thread.
+            // Locked so two rapid events can't interleave and dispatch a stale value.
+            // Job is counted so ~NetworkDelegate can wait for it before destructing.
+            mParent.mActiveWorkerJobs.fetch_add(1, std::memory_order_acq_rel);
             mParent.PostToWorkerPool([this]() {
+                JobDrainGuard drainGuard(mParent);
                 std::lock_guard<std::mutex> lock(mParent.mQueryDispatchMutex);
 
                 Exchange::INetworkManager *networkManager = mParent.GetNetworkManagerInterface();
@@ -375,8 +409,12 @@ private:
     bool mLastConnectedKnown = false;
     bool mLastConnected = false;
     std::mutex mLastConnectedMutex;
-    // Serializes onInterfaceStateChange's query-and-dispatch step across worker-pool tasks.
+    // Serializes query-and-dispatch across worker-pool jobs.
     std::mutex mQueryDispatchMutex;
+    // In-flight worker-pool job count. Destructor waits for this to hit 0.
+    std::atomic<int> mActiveWorkerJobs{0};
+    std::mutex mJobDrainMutex;
+    std::condition_variable mJobDrainCv;
 };
 
 #endif // __NETWORKDELEGATE_H__
