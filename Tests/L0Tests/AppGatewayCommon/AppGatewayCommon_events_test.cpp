@@ -292,6 +292,68 @@ uint32_t Test_HandleAppEventNotifier_NetworkEvent_UnsubscribeOnly()
     return tr.failures;
 }
 
+// ─── VideoOutput event tests ──────────────────────────────────────────
+
+// TEST_ID: AGC_L0_120
+// VideoOutputDelegate registration path: videooutput.onresolutionchanged listen=true.
+uint32_t Test_HandleAppEventNotifier_VideoOutputResolutionEvent_ListenTrue()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppNotificationHandler> notif(ps.plugin);
+    auto* emitter = new StubEmitter();
+
+    bool status = false;
+    const uint32_t rc = notif->HandleAppEventNotifier(emitter, "videooutput.onresolutionchanged", true, status);
+    ExpectEqU32(tr, rc, ERROR_NONE, "VideoOutput resolution event listen=true returns ERROR_NONE");
+    ExpectTrue(tr, status, "VideoOutput resolution event listen=true sets status true");
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    emitter->Release();
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_121
+// VideoOutputDelegate registration path: videooutput.onhdcpchanged listen=true.
+uint32_t Test_HandleAppEventNotifier_VideoOutputHdcpEvent_ListenTrue()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppNotificationHandler> notif(ps.plugin);
+    auto* emitter = new StubEmitter();
+
+    bool status = false;
+    const uint32_t rc = notif->HandleAppEventNotifier(emitter, "videooutput.onhdcpchanged", true, status);
+    ExpectEqU32(tr, rc, ERROR_NONE, "VideoOutput HDCP event listen=true returns ERROR_NONE");
+    ExpectTrue(tr, status, "VideoOutput HDCP event listen=true sets status true");
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    emitter->Release();
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_122
+// VideoOutputDelegate registration path: videooutput.oncecstatechanged listen=true.
+uint32_t Test_HandleAppEventNotifier_VideoOutputCecActiveStateEvent_ListenTrue()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppNotificationHandler> notif(ps.plugin);
+    auto* emitter = new StubEmitter();
+
+    bool status = false;
+    const uint32_t rc = notif->HandleAppEventNotifier(emitter, "videooutput.oncecstatechanged", true, status);
+    ExpectEqU32(tr, rc, ERROR_NONE, "VideoOutput CecActiveState event listen=true returns ERROR_NONE");
+    ExpectTrue(tr, status, "VideoOutput CecActiveState event listen=true sets status true");
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    emitter->Release();
+    return tr.failures;
+}
+
 // TEST_ID: AGC_L0_097A
 // AvOutputDelegate registration path: device.ondolbyatmosexperienceavailablechanged listen=true.
 uint32_t Test_HandleAppEventNotifier_DolbyAtmosEvent_ListenTrue()
@@ -305,10 +367,164 @@ uint32_t Test_HandleAppEventNotifier_DolbyAtmosEvent_ListenTrue()
     const uint32_t rc = notif->HandleAppEventNotifier(emitter, "device.ondolbyatmosexperienceavailablechanged", true, status);
     ExpectEqU32(tr, rc, ERROR_NONE, "Dolby Atmos event listen=true returns ERROR_NONE (job submitted)");
     ExpectTrue(tr, status, "Dolby Atmos event listen=true sets status true");
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    emitter->Release();
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_123
+// VideoOutputDelegate registration path: videooutput.onportchanged listen=true.
+uint32_t Test_HandleAppEventNotifier_VideoOutputPortEvent_ListenTrue()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppNotificationHandler> notif(ps.plugin);
+    auto* emitter = new StubEmitter();
+
+    bool status = false;
+    const uint32_t rc = notif->HandleAppEventNotifier(emitter, "videooutput.onportchanged", true, status);
+    ExpectEqU32(tr, rc, ERROR_NONE, "VideoOutput port event listen=true returns ERROR_NONE");
+    ExpectTrue(tr, status, "VideoOutput port event listen=true sets status true");
 
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
     emitter->Release();
     return tr.failures;
 }
+
+// TEST_ID: AGC_L0_125
+// Regression: VideoOutputDelegate teardown must only unsubscribe methods that were
+// actually registered. This isolated plugin instance listens to the two event paths
+// that exercise DisplaySettings and DisplayInfo subscription bookkeeping, then
+// deinitializes immediately to validate teardown does not assert.
+uint32_t Test_HandleAppEventNotifier_VideoOutputTeardownAfterSubscriptions_NoCrash()
+{
+    TestResult tr;
+    PluginAndService ps;
+
+    const std::string initResult = ps.plugin->Initialize(ps.service);
+    ExpectTrue(tr, initResult.empty(), "Isolated plugin Initialize returns empty string");
+
+    QIGuard<Exchange::IAppNotificationHandler> notif(ps.plugin);
+    auto* emitter = new StubEmitter();
+
+    bool portStatus = false;
+    const uint32_t portRc = notif->HandleAppEventNotifier(emitter, "videooutput.onportchanged", true, portStatus);
+    ExpectEqU32(tr, portRc, ERROR_NONE, "VideoOutput port event listen=true returns ERROR_NONE");
+    ExpectTrue(tr, portStatus, "VideoOutput port event listen=true sets status true");
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    emitter->Release();
+    ps.plugin->Deinitialize(ps.service);
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_126
+// Narrow regression: a single consumer-facing DisplaySettings-backed VideoOutput
+// subscription must tear down cleanly. This isolates the case that originally
+// failed when teardown attempted to unregister an event that had never been
+// registered on the underlying JSON-RPC link.
+uint32_t Test_HandleAppEventNotifier_VideoOutputResolutionOnlyTeardown_NoCrash()
+{
+    TestResult tr;
+    PluginAndService ps;
+
+    const std::string initResult = ps.plugin->Initialize(ps.service);
+    ExpectTrue(tr, initResult.empty(), "Isolated plugin Initialize returns empty string");
+
+    QIGuard<Exchange::IAppNotificationHandler> notif(ps.plugin);
+    auto* emitter = new StubEmitter();
+
+    bool resolutionStatus = false;
+    const uint32_t resolutionRc = notif->HandleAppEventNotifier(emitter, "videooutput.onresolutionchanged", true, resolutionStatus);
+    ExpectEqU32(tr, resolutionRc, ERROR_NONE, "VideoOutput resolution event listen=true returns ERROR_NONE");
+    ExpectTrue(tr, resolutionStatus, "VideoOutput resolution event listen=true sets status true");
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    emitter->Release();
+    ps.plugin->Deinitialize(ps.service);
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_127
+// Narrow regression: a single DisplaySettings-backed port subscription must tear
+// down cleanly after registration.
+uint32_t Test_HandleAppEventNotifier_VideoOutputPortOnlyTeardown_NoCrash()
+{
+    TestResult tr;
+    PluginAndService ps;
+
+    const std::string initResult = ps.plugin->Initialize(ps.service);
+    ExpectTrue(tr, initResult.empty(), "Isolated plugin Initialize returns empty string");
+
+    QIGuard<Exchange::IAppNotificationHandler> notif(ps.plugin);
+    auto* emitter = new StubEmitter();
+
+    bool portStatus = false;
+    const uint32_t portRc = notif->HandleAppEventNotifier(emitter, "videooutput.onportchanged", true, portStatus);
+    ExpectEqU32(tr, portRc, ERROR_NONE, "VideoOutput port event listen=true returns ERROR_NONE");
+    ExpectTrue(tr, portStatus, "VideoOutput port event listen=true sets status true");
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    emitter->Release();
+    ps.plugin->Deinitialize(ps.service);
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_128
+// Narrow regression: a single HdcpProfile-backed subscription must tear down
+// cleanly after registration.
+uint32_t Test_HandleAppEventNotifier_VideoOutputHdcpOnlyTeardown_NoCrash()
+{
+    TestResult tr;
+    PluginAndService ps;
+
+    const std::string initResult = ps.plugin->Initialize(ps.service);
+    ExpectTrue(tr, initResult.empty(), "Isolated plugin Initialize returns empty string");
+
+    QIGuard<Exchange::IAppNotificationHandler> notif(ps.plugin);
+    auto* emitter = new StubEmitter();
+
+    bool hdcpStatus = false;
+    const uint32_t hdcpRc = notif->HandleAppEventNotifier(emitter, "videooutput.onhdcpchanged", true, hdcpStatus);
+    ExpectEqU32(tr, hdcpRc, ERROR_NONE, "VideoOutput HDCP event listen=true returns ERROR_NONE");
+    ExpectTrue(tr, hdcpStatus, "VideoOutput HDCP event listen=true sets status true");
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    emitter->Release();
+    ps.plugin->Deinitialize(ps.service);
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_129
+// Narrow regression: a single HdmiCecSource-backed subscription must tear down
+// cleanly after registration.
+uint32_t Test_HandleAppEventNotifier_VideoOutputCecOnlyTeardown_NoCrash()
+{
+    TestResult tr;
+    PluginAndService ps;
+
+    const std::string initResult = ps.plugin->Initialize(ps.service);
+    ExpectTrue(tr, initResult.empty(), "Isolated plugin Initialize returns empty string");
+
+    QIGuard<Exchange::IAppNotificationHandler> notif(ps.plugin);
+    auto* emitter = new StubEmitter();
+
+    bool cecStatus = false;
+    const uint32_t cecRc = notif->HandleAppEventNotifier(emitter, "videooutput.oncecstatechanged", true, cecStatus);
+    ExpectEqU32(tr, cecRc, ERROR_NONE, "VideoOutput CEC event listen=true returns ERROR_NONE");
+    ExpectTrue(tr, cecStatus, "VideoOutput CEC event listen=true sets status true");
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    emitter->Release();
+    ps.plugin->Deinitialize(ps.service);
+    return tr.failures;
+}
+
 

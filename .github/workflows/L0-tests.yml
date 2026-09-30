@@ -22,7 +22,7 @@ env:
   THUNDER_TOOLS_REF: "R4_4-RDK"
   THUNDER_TOOLS_COMMIT_SHA: "d5dd83c7c19c49c7f25c558c126500bd2d64f7a4"
   THUNDER_COMMIT_SHA: "2c0fcc5529e7da734be558ca6efa05d934dcce31"
-  INTERFACES_REF: "7f69f2165c8acd07a5194485252d99e0819f0aef"
+  INTERFACES_REF: "topic/RDKEMW-20993"
   ENABLE_GDB: ${{ (inputs.enable_gdb && '1') || '0' }}
   # L0 test targets to build and run -- To add a new plugin, append its test binary name here and add its target in Tests/L0Tests/CMakeLists.txt.
   L0_PLUGIN_TESTS: "appgateway_l0test appgatewaycommon_l0test appnotifications_l0test appactions_l0test"

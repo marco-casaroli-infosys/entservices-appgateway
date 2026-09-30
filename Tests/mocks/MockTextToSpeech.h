@@ -51,6 +51,14 @@ public:
     MOCK_METHOD(WPEFramework::Core::hresult, GetSpeechState, (const uint32_t speechid, SpeechState& state), (override));
     MOCK_METHOD(WPEFramework::Core::hresult, SetACL, (const string method, const string apps), (override));
 
+    MOCK_METHOD(WPEFramework::Core::hresult, GetVoices, (const string& language, IVoiceInfoIterator*& voices), (const, override));
+    MOCK_METHOD(WPEFramework::Core::hresult, SpeakWithUtterance, (const string& callsign, const SpeechUtterance& utterance, const string& text, uint32_t& speechid, TTSErrorDetail& status), (override));
+    MOCK_METHOD(WPEFramework::Core::hresult, GetInterfaceVersion, (uint32_t& version), (const, override));
+    MOCK_METHOD(WPEFramework::Core::hresult, GetCapability, (Capability capability, bool& hasCapability), (const, override));
+    MOCK_METHOD(WPEFramework::Core::hresult, GetCapabilities, (ICapabilityIterator*& capabilities), (const, override));
+    MOCK_METHOD(WPEFramework::Core::hresult, GetDeviceConfiguration, (DeviceConfiguration& config), (const, override));
+    MOCK_METHOD(WPEFramework::Core::hresult, SetDeviceConfiguration, (const DeviceConfiguration& config), (override));
+
     BEGIN_INTERFACE_MAP(MockTextToSpeech)
     INTERFACE_ENTRY(WPEFramework::Exchange::ITextToSpeech)
     END_INTERFACE_MAP

@@ -25,9 +25,9 @@
 
 using namespace WPEFramework;
 
-#define ERROR_NOT_SUPPORTED (-50100)
-#define ERROR_NOT_AVAILABLE (-50200)
-#define ERROR_NOT_PERMITTED (-40300)
+#define FIREBOLT_ERROR_NOT_SUPPORTED (-50100)
+#define FIREBOLT_ERROR_NOT_AVAILABLE (-50200)
+#define FIREBOLT_ERROR_NOT_PERMITTED (-40300)
 
 
 class JListenRequest: public Core::JSON::Container {
@@ -144,15 +144,15 @@ class ErrorUtils {
         Core::JSONRPC::Message::Info info;
         switch (error) {
             case FireboltError::NOT_SUPPORTED:
-                info.Code = ERROR_NOT_SUPPORTED;
+                info.Code = FIREBOLT_ERROR_NOT_SUPPORTED;
                 info.Text = "NotSupported";
                 break;
             case FireboltError::NOT_AVAILABLE:
-                info.Code = ERROR_NOT_AVAILABLE;
+                info.Code = FIREBOLT_ERROR_NOT_AVAILABLE;
                 info.Text = "NotAvailable";
                 break;
             case FireboltError::NOT_PERMITTED:
-                info.Code = ERROR_NOT_PERMITTED;
+                info.Code = FIREBOLT_ERROR_NOT_PERMITTED;
                 info.Text = "NotPermitted";
                 break;
             default:

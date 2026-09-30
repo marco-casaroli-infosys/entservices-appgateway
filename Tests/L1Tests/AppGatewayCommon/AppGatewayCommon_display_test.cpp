@@ -37,6 +37,7 @@
 #undef private
 
 #include "ServiceMock.h"
+#include "MockEmitter.h"
 #include "MockJSONRPCDirectLink.h"
 #include "ThunderPortability.h"
 #include "WorkerPoolImplementation.h"
@@ -242,6 +243,7 @@ protected:
     NiceMock<MockConnectionProperties>* connProps { nullptr };
     NiceMock<MockDisplayProperties>*    dispProps { nullptr };
     Core::Sink<MockJSONRPC::MockLocalDispatcher> displaySettingsDisp;
+    Core::Sink<MockJSONRPC::MockLocalDispatcher> hdmiCecSourceDisp;
 
     void SetUp() override
     {
@@ -270,6 +272,12 @@ protected:
             .WillByDefault(Invoke([this](uint32_t, const string&) -> void* {
                 displaySettingsDisp.AddRef();
                 return static_cast<PluginHost::ILocalDispatcher*>(&displaySettingsDisp);
+            }));
+
+        ON_CALL(service, QueryInterfaceByCallsign(PluginHost::ILocalDispatcher::ID, StrEq("org.rdk.HdmiCecSource")))
+            .WillByDefault(Invoke([this](uint32_t, const string&) -> void* {
+                hdmiCecSourceDisp.AddRef();
+                return static_cast<PluginHost::ILocalDispatcher*>(&hdmiCecSourceDisp);
             }));
 
         EXPECT_CALL(service, AddRef()).Times(AnyNumber());
@@ -320,6 +328,43 @@ TEST_F(DisplayDelegateTest, AGC_L1_147_DisplayEdid_Connected_ReturnBase64)
     // Result must be a quoted Base64 string
     EXPECT_EQ(result.front(), '"');
     EXPECT_EQ(result.back(),  '"');
+}
+
+// TEST_ID: AGC_L1_166
+// videooutput.resolution: Thunder getCurrentResolution returns a resolution string "1080p60"
+// → delegate should parse and map to {width:1920,height:1080}
+TEST_F(DisplayDelegateTest, AGC_L1_166_VideoOutputResolution_Parse1080p60)
+{
+    displaySettingsDisp.SetHandler("getCurrentResolution", [](const std::string&, const std::string&, std::string& resp) {
+        resp = R"({"resolution":"1080p60","success":true})";
+        return Core::ERROR_NONE;
+    });
+
+    const auto ctx = MakeCtx();
+    string result;
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "videooutput.resolution", "{}", result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_NE(result.find("1920"), std::string::npos);
+    EXPECT_NE(result.find("1080"), std::string::npos);
+}
+
+// TEST_ID: AGC_L1_167
+// videooutput.resolution: Thunder returns explicit w/h fields → delegate should prefer them
+TEST_F(DisplayDelegateTest, AGC_L1_167_VideoOutputResolution_PreferWH)
+{
+    displaySettingsDisp.SetHandler("getCurrentResolution", [](const std::string&, const std::string&, std::string& resp) {
+        resp = R"({"w":1280,"h":720,"success":true})";
+        return Core::ERROR_NONE;
+    });
+
+    const auto ctx = MakeCtx();
+    string result;
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "videooutput.resolution", "{}", result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_NE(result.find("1280"), std::string::npos);
+    EXPECT_NE(result.find("720"), std::string::npos);
 }
 
 // TEST_ID: AGC_L1_148
@@ -704,6 +749,391 @@ TEST_F(DisplayDelegateTest, AGC_L1_165_DisplayVideoResolutions_RealWorldResponse
     EXPECT_EQ(result.find("1080p24"), std::string::npos);
     EXPECT_EQ(result.find("1080i"),   std::string::npos);
     EXPECT_EQ(result.find("2160p30"), std::string::npos);
+}
+
+// TEST_ID: AGC_L1_168
+// videooutput.resolution: Thunder returns "1920x1080" token → delegate should parse WxH
+TEST_F(DisplayDelegateTest, AGC_L1_168_VideoOutputResolution_ParseWxH)
+{
+    displaySettingsDisp.SetHandler("getCurrentResolution", [](const std::string&, const std::string&, std::string& resp) {
+        resp = R"({"resolution":"1920x1080","success":true})";
+        return Core::ERROR_NONE;
+    });
+
+    const auto ctx = MakeCtx();
+    string result;
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "videooutput.resolution", "{}", result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_NE(result.find("1920"), std::string::npos);
+    EXPECT_NE(result.find("1080"), std::string::npos);
+}
+
+// TEST_ID: AGC_L1_169
+// videooutput.resolution: Thunder returns malformed/garbage -> delegate should fall back to {0,0}
+TEST_F(DisplayDelegateTest, AGC_L1_169_VideoOutputResolution_Garbage)
+{
+    displaySettingsDisp.SetHandler("getCurrentResolution", [](const std::string&, const std::string&, std::string& resp) {
+        resp = R"({"resolution":"unknown-format","success":true})";
+        return Core::ERROR_NONE;
+    });
+
+    const auto ctx = MakeCtx();
+    string result;
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "videooutput.resolution", "{}", result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    // expect width:0 and height:0
+    EXPECT_NE(result.find("\"width\":0"), std::string::npos);
+    EXPECT_NE(result.find("\"height\":0"), std::string::npos);
+}
+
+// TEST_ID: AGC_L1_170
+// VideoOutput.hdcp: if getConnectedVideoDisplays contains "Internal", isTVPanel() -> true
+// and GetVideoOutputHdcp() should return "direct" without querying HDCP profile.
+TEST_F(DisplayDelegateTest, AGC_L1_170_VideoOutputHdcp_InternalPortReturnsDirect)
+{
+    // getConnectedVideoDisplays returns ["Internal"]
+    displaySettingsDisp.SetHandler("getConnectedVideoDisplays", [](const std::string&, const std::string&, std::string& resp) {
+        resp = R"({"connectedVideoDisplays":["Internal"],"success":true})";
+        return Core::ERROR_NONE;
+    });
+
+    const auto ctx = MakeCtx();
+    string result;
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "videooutput.hdcp", "{}", result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(result, "\"direct\"");
+}
+
+// TEST_ID: AGC_L1_171
+// videooutput.resolution: JSON-RPC call fails (ERROR_GENERAL) -> fallback {0,0}
+TEST_F(DisplayDelegateTest, AGC_L1_171_VideoOutputResolution_RpcErrorFallsBack)
+{
+    displaySettingsDisp.SetHandler("getCurrentResolution", [](const std::string&, const std::string&, std::string& resp) -> Core::hresult {
+        resp = R"({})";
+        return Core::ERROR_GENERAL;
+    });
+
+    const auto ctx = MakeCtx();
+    string result;
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "videooutput.resolution", "{}", result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_NE(result.find("\"width\":0"), std::string::npos);
+    EXPECT_NE(result.find("\"height\":0"), std::string::npos);
+}
+
+// TEST_ID: AGC_L1_172
+// videooutput.resolution: response missing both w/h and resolution -> fallback {0,0}
+TEST_F(DisplayDelegateTest, AGC_L1_172_VideoOutputResolution_MissingFieldsFallsBack)
+{
+    displaySettingsDisp.SetHandler("getCurrentResolution", [](const std::string&, const std::string&, std::string& resp) {
+        resp = R"({"success":true})";
+        return Core::ERROR_NONE;
+    });
+
+    const auto ctx = MakeCtx();
+    string result;
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "videooutput.resolution", "{}", result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_NE(result.find("\"width\":0"), std::string::npos);
+    EXPECT_NE(result.find("\"height\":0"), std::string::npos);
+}
+
+// TEST_ID: AGC_L1_173
+// videooutput.colorimetry: IDisplayProperties::GetCurrentColorimetry returns error -> "none"
+TEST_F(DisplayDelegateTest, AGC_L1_173_VideoOutputColorimetry_GetCurrentFails)
+{
+    ON_CALL(*dispProps, GetCurrentColorimetry(_))
+        .WillByDefault(Return(Core::ERROR_GENERAL));
+
+    const auto ctx = MakeCtx();
+    string result;
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "videooutput.colorimetry", "{}", result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(result, "\"none\"");
+}
+
+// TEST_ID: AGC_L1_174
+// videooutput.quantizationRange: IDisplayProperties::QuantizationRange returns error -> "none"
+TEST_F(DisplayDelegateTest, AGC_L1_174_VideoOutputQuantizationRange_CallFails)
+{
+    ON_CALL(*dispProps, QuantizationRange(_))
+        .WillByDefault(Return(Core::ERROR_GENERAL));
+
+    const auto ctx = MakeCtx();
+    string result;
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "videooutput.quantizationrange", "{}", result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(result, "\"none\"");
+}
+
+// TEST_ID: AGC_L1_175
+// videooutput.hdcp: non-internal port should not return "direct"; with no HDCP link should fall back to "none"
+TEST_F(DisplayDelegateTest, AGC_L1_175_VideoOutputHdcp_NonInternalReturnsNone)
+{
+    // getConnectedVideoDisplays returns ["HDMI1"]
+    displaySettingsDisp.SetHandler("getConnectedVideoDisplays", [](const std::string&, const std::string&, std::string& resp) {
+        resp = R"({"connectedVideoDisplays":["HDMI1"],"success":true})";
+        return Core::ERROR_NONE;
+    });
+
+    const auto ctx = MakeCtx();
+    string result;
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "videooutput.hdcp", "{}", result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(result, "\"none\"");
+}
+
+// TEST_ID: AGC_L1_176
+// GetVideoOutputCecActiveState: TV panel (internal display) should follow the TV-specific path.
+TEST_F(DisplayDelegateTest, AGC_L1_176_VideoOutputCecActiveState_TvPanelReturnsNotSupported)
+{
+    displaySettingsDisp.SetHandler("getConnectedVideoDisplays", [](const std::string&, const std::string&, std::string& resp) {
+        resp = R"({"connectedVideoDisplays":["Internal"],"success":true})";
+        return Core::ERROR_NONE;
+    });
+
+    string result;
+    const auto rc = plugin.GetVideoOutputCecActiveState(result);
+
+    EXPECT_EQ(Core::ERROR_UNAVAILABLE, rc);
+    EXPECT_EQ(result, "\"Wrong device class\"");
+}
+
+// TEST_ID: AGC_L1_177
+// GetVideoOutputCecActiveState: streambox/HDMI device should query HdmiCecSource and return "active".
+TEST_F(DisplayDelegateTest, AGC_L1_177_VideoOutputCecActiveState_StreamboxReturnsActive)
+{
+    displaySettingsDisp.SetHandler("getConnectedVideoDisplays", [](const std::string&, const std::string&, std::string& resp) {
+        resp = R"({"connectedVideoDisplays":["HDMI1"],"success":true})";
+        return Core::ERROR_NONE;
+    });
+    hdmiCecSourceDisp.SetHandler("getEnabled", [](const std::string&, const std::string&, std::string& resp) {
+        resp = R"({"enabled":true,"success":true})";
+        return Core::ERROR_NONE;
+    });
+    hdmiCecSourceDisp.SetHandler("getActiveSourceStatus", [](const std::string&, const std::string&, std::string& resp) {
+        resp = R"({"status":true,"success":true})";
+        return Core::ERROR_NONE;
+    });
+
+    string result;
+    const auto rc = plugin.GetVideoOutputCecActiveState(result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(result, "\"active\"");
+}
+
+// TEST_ID: AGC_L1_178
+// GetVideoOutputPort: HDMI port names should normalize to "hdmi".
+TEST_F(DisplayDelegateTest, AGC_L1_178_VideoOutputPort_Hdmi)
+{
+    auto delegate = plugin.mDelegate->getVideoOutputDelegate();
+    ASSERT_NE(nullptr, delegate);
+
+    displaySettingsDisp.SetHandler("getConnectedVideoDisplays", [](const std::string&, const std::string&, std::string& resp) {
+        resp = R"({"connectedVideoDisplays":["HDMI0"],"success":true})";
+        return Core::ERROR_NONE;
+    });
+
+    string result;
+    const auto rc = delegate->GetVideoOutputPort(result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(result, "\"hdmi\"");
+}
+
+// TEST_ID: AGC_L1_179
+// GetVideoOutputPort: internal port names should normalize to "internal".
+TEST_F(DisplayDelegateTest, AGC_L1_179_VideoOutputPort_Internal)
+{
+    auto delegate = plugin.mDelegate->getVideoOutputDelegate();
+    ASSERT_NE(nullptr, delegate);
+
+    displaySettingsDisp.SetHandler("getConnectedVideoDisplays", [](const std::string&, const std::string&, std::string& resp) {
+        resp = R"({"connectedVideoDisplays":["Internal"],"success":true})";
+        return Core::ERROR_NONE;
+    });
+
+    string result;
+    const auto rc = delegate->GetVideoOutputPort(result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(result, "\"internal\"");
+}
+
+// TEST_ID: AGC_L1_180
+// GetVideoOutputRefreshRate: COM-RPC enum should map to the Firebolt string value.
+TEST_F(DisplayDelegateTest, AGC_L1_180_VideoOutputRefreshRate_60)
+{
+    auto delegate = plugin.mDelegate->getVideoOutputDelegate();
+    ASSERT_NE(nullptr, delegate);
+
+    ON_CALL(*dispProps, FrameRate(_))
+        .WillByDefault(Invoke([](Exchange::IDisplayProperties::FrameRateType& out) {
+            out = Exchange::IDisplayProperties::FRAMERATE_60;
+            return Core::ERROR_NONE;
+        }));
+
+    string result;
+    const auto rc = delegate->GetVideoOutputRefreshRate(result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(result, "60");
+}
+
+// TEST_ID: AGC_L1_181
+// GetVideoOutputColorDepth: COM-RPC enum should map to the Firebolt numeric string.
+TEST_F(DisplayDelegateTest, AGC_L1_181_VideoOutputColorDepth_10Bit)
+{
+    auto delegate = plugin.mDelegate->getVideoOutputDelegate();
+    ASSERT_NE(nullptr, delegate);
+
+    ON_CALL(*dispProps, ColourDepth(_))
+        .WillByDefault(Invoke([](Exchange::IDisplayProperties::ColourDepthType& out) {
+            out = Exchange::IDisplayProperties::COLORDEPTH_10_BIT;
+            return Core::ERROR_NONE;
+        }));
+
+    string result;
+    const auto rc = delegate->GetVideoOutputColorDepth(result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(result, "10");
+}
+
+// TEST_ID: AGC_L1_182
+// GetVideoOutputColorFormat: COM-RPC enum should map to the Firebolt format string.
+TEST_F(DisplayDelegateTest, AGC_L1_182_VideoOutputColorFormat_YCbCr420)
+{
+    auto delegate = plugin.mDelegate->getVideoOutputDelegate();
+    ASSERT_NE(nullptr, delegate);
+
+    ON_CALL(*dispProps, ColorSpace(_))
+        .WillByDefault(Invoke([](Exchange::IDisplayProperties::ColourSpaceType& out) {
+            out = Exchange::IDisplayProperties::FORMAT_YCBCR_420;
+            return Core::ERROR_NONE;
+        }));
+
+    string result;
+    const auto rc = delegate->GetVideoOutputColorFormat(result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(result, "\"ycbcr420\"");
+}
+
+// TEST_ID: AGC_L1_183
+// GetVideoOutputColorimetry: supported enum should map to the Firebolt colorimetry string.
+TEST_F(DisplayDelegateTest, AGC_L1_183_VideoOutputColorimetry_Bt2020Rgb)
+{
+    auto delegate = plugin.mDelegate->getVideoOutputDelegate();
+    ASSERT_NE(nullptr, delegate);
+
+    ON_CALL(*dispProps, GetCurrentColorimetry(_))
+        .WillByDefault(Invoke([](Exchange::IDisplayProperties::ColorimetryTypeInfo& out) {
+            out.colorimetry = Exchange::IDisplayProperties::COLORIMETRY_BT2020RGB_YCBCR;
+            return Core::ERROR_NONE;
+        }));
+
+    string result;
+    const auto rc = delegate->GetVideoOutputColorimetry(result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(result, "\"bt2020rgb\"");
+}
+
+// TEST_ID: AGC_L1_184
+// GetVideoOutputDynamicRange: DisplaySettings video format should map to the Firebolt dynamic range string.
+TEST_F(DisplayDelegateTest, AGC_L1_184_VideoOutputDynamicRange_Hdr10Plus)
+{
+    auto delegate = plugin.mDelegate->getVideoOutputDelegate();
+    ASSERT_NE(nullptr, delegate);
+
+    displaySettingsDisp.SetHandler("getVideoFormat", [](const std::string&, const std::string&, std::string& resp) {
+        resp = R"({"currentVideoFormat":"HDR10PLUS","success":true})";
+        return Core::ERROR_NONE;
+    });
+
+    string result;
+    const auto rc = delegate->GetVideoOutputDynamicRange(result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(result, "\"hdr10plus\"");
+}
+
+// TEST_ID: AGC_L1_185
+// GetVideoOutputQuantizationRange: COM-RPC enum should map to the Firebolt range string.
+TEST_F(DisplayDelegateTest, AGC_L1_185_VideoOutputQuantizationRange_Full)
+{
+    auto delegate = plugin.mDelegate->getVideoOutputDelegate();
+    ASSERT_NE(nullptr, delegate);
+
+    ON_CALL(*dispProps, QuantizationRange(_))
+        .WillByDefault(Invoke([](Exchange::IDisplayProperties::QuantizationRangeType& out) {
+            out = Exchange::IDisplayProperties::QUANTIZATIONRANGE_FULL;
+            return Core::ERROR_NONE;
+        }));
+
+    string result;
+    const auto rc = delegate->GetVideoOutputQuantizationRange(result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(result, "\"full\"");
+}
+
+// TEST_ID: AGC_L1_186
+// HandleEvent: unknown events should fail registration and report an error.
+TEST_F(DisplayDelegateTest, AGC_L1_186_VideoOutputHandleEvent_UnknownEvent)
+{
+    auto delegate = plugin.mDelegate->getVideoOutputDelegate();
+    ASSERT_NE(nullptr, delegate);
+
+    Core::Sink<MockEmitter> emitter;
+    bool registrationError = false;
+
+    EXPECT_FALSE(delegate->HandleEvent(&emitter, "videooutput.onunknown", true, registrationError));
+    EXPECT_TRUE(registrationError);
+}
+
+// TEST_ID: AGC_L1_187
+// EmitOnPortChanged: registered emitters should receive the normalized port payload.
+TEST_F(DisplayDelegateTest, AGC_L1_187_VideoOutputEmitOnPortChanged_Dispatches)
+{
+    auto delegate = plugin.mDelegate->getVideoOutputDelegate();
+    ASSERT_NE(nullptr, delegate);
+
+    displaySettingsDisp.SetHandler("getConnectedVideoDisplays", [](const std::string&, const std::string&, std::string& resp) {
+        resp = R"({"connectedVideoDisplays":["HDMI0"],"success":true})";
+        return Core::ERROR_NONE;
+    });
+
+    Core::Sink<MockEmitter> emitter;
+    std::atomic<bool> emitted(false);
+
+    delegate->AddNotification("VideoOutput.onPortChanged", &emitter);
+
+    EXPECT_CALL(emitter, Emit(StrEq("VideoOutput.onPortChanged"), StrEq("\"hdmi\""), StrEq("")))
+        .WillOnce(Invoke([&emitted](const string&, const string&, const string&) {
+            emitted.store(true, std::memory_order_release);
+        }));
+
+    EXPECT_TRUE(delegate->EmitOnPortChanged());
+
+    for (int attempt = 0; (attempt < 20) && (false == emitted.load(std::memory_order_acquire)); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    EXPECT_TRUE(emitted.load(std::memory_order_acquire));
+
+    delegate->RemoveNotification("VideoOutput.onPortChanged", &emitter);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
 }
 
 } // anonymous namespace

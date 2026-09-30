@@ -31,7 +31,7 @@ git clone --branch  R4_4-RDK https://github.com/rdkcentral/ThunderTools.git
 
 git clone --branch R4_4-RDK https://github.com/rdkcentral/Thunder.git
 
-git clone --branch develop https://github.com/rdkcentral/entservices-apis.git
+git clone --branch topic/RDKEMW-20993 https://github.com/rdkcentral/entservices-apis.git
 
 git clone --branch 1.0.1 https://github.com/rdkcentral/entservices-testframework.git
 
@@ -87,7 +87,7 @@ echo "==========================================================================
 echo "buliding entservices-apis"
 cd entservices-apis
 # this is added to avoid the latest build error.
-git checkout 7f69f2165c8acd07a5194485252d99e0819f0aef
+#git checkout 7f69f2165c8acd07a5194485252d99e0819f0aef
 rm -rf jsonrpc/DTV.json
 cd ..
 

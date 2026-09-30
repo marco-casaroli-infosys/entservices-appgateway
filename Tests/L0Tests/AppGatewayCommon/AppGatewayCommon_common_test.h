@@ -21,6 +21,7 @@ using WPEFramework::Core::ERROR_GENERAL;
 using WPEFramework::Core::ERROR_UNAVAILABLE;
 using WPEFramework::Core::ERROR_BAD_REQUEST;
 using WPEFramework::Core::ERROR_UNKNOWN_KEY;
+using WPEFramework::Core::ERROR_INVALID_INPUT_LENGTH;
 using WPEFramework::Plugin::AppGatewayCommon;
 using WPEFramework::PluginHost::IPlugin;
 

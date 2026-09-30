@@ -77,6 +77,14 @@ if(USE_THUNDER_R4)
     add_compile_definitions(USE_THUNDER_R4)
 endif()
 
+# Since that root file is not executed here, re-apply it
+# explicitly so it matches the marker file path the L1 workflow/tests manage
+# (/etc/rdkappmanagers) instead of permanently false.
+if(NOT RDKAPPMANAGERS_PATH)
+    set(RDKAPPMANAGERS_PATH "/etc/rdkappmanagers")
+endif()
+add_compile_definitions(RDKAPPMANAGERS_PATH="${RDKAPPMANAGERS_PATH}")
+
 # ---------------------------------------------------------------------------
 # ConfigGenerator integration (L1Tests-only builds)
 #
@@ -284,6 +292,7 @@ if(PLUGIN_APPGATEWAYCOMMON)
         AppGatewayCommon/AppGatewayCommon_lifecycle_test.cpp
         AppGatewayCommon/AppGatewayCommon_events_test.cpp
         AppGatewayCommon/AppGatewayCommon_display_test.cpp
+        AppGatewayCommon/AppGatewayCommon_branding_test.cpp
     )
 
     list(APPEND APPGATEWAYCOMMON_L1TEST_INC

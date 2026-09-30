@@ -22,6 +22,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_set>
@@ -96,6 +97,46 @@ public:
     static constexpr const char* EVENT_ON_COUNTRY_CHANGED     = "Localization.onCountryChanged";
 
 private:
+    // Small helper job that runs an arbitrary std::function on a worker-pool thread.
+    // Used to move re-query/emit work OFF the Thunder notification-delivery thread,
+    // so we never make a blocking COM/JSON-RPC call back into the same plugin that
+    // is currently dispatching the event to us (this was the root cause of the
+    // 20+ second timeouts described in RDKEMW-24422).
+    //
+    // NOTE: intentionally NOT using Utils::Job here — that class's base type
+    // (Core::IDispatchType<void> vs Core::IDispatch) depends on whether
+    // USE_THUNDER_R4 is defined for this translation unit, which caused a
+    // "template argument 1" compile failure in the Yocto build because
+    // AppGatewayCommon does not define USE_THUNDER_R4. WorkerPoolTask always
+    // derives from Core::IDispatch, so it is unaffected by that macro.
+    class EXTERNAL WorkerPoolTask : public Core::IDispatch
+    {
+    public:
+        explicit WorkerPoolTask(std::function<void()> work)
+            : _work(std::move(work))
+        {
+        }
+        WorkerPoolTask() = delete;
+        WorkerPoolTask(const WorkerPoolTask&) = delete;
+        WorkerPoolTask& operator=(const WorkerPoolTask&) = delete;
+        ~WorkerPoolTask() override = default;
+
+        void Dispatch() override
+        {
+            _work();
+        }
+
+    private:
+        std::function<void()> _work;
+    };
+
+    // Convenience helper: submit work to the Thunder worker pool.
+    static void PostToWorkerPool(std::function<void()> work)
+    {
+        Core::IWorkerPool::Instance().Submit(
+            Core::ProxyType<Core::IDispatch>(Core::ProxyType<WorkerPoolTask>::Create(std::move(work))));
+    }
+
     class SystemServicesNotification : public Exchange::ISystemServices::INotification
     {
     private:
@@ -1055,6 +1096,143 @@ public:
         return Core::ERROR_NONE;
     }
 
+    // ---- Device Branding APIs (Phase 1) ----
+
+    // PUBLIC_INTERFACE
+    // Device.setOsName — writes operating system name to DeviceInfo.osname (persisted)
+    Core::hresult SetDeviceOsName(const std::string &osName)
+    {
+        if (nullptr == _shell) return Core::ERROR_UNAVAILABLE;
+
+        auto* di = _shell->QueryInterfaceByCallsign<Exchange::IDeviceInfo>(DEVICEINFO_CALLSIGN);
+        if (nullptr == di)
+        {
+            LOGWARN("SystemDelegate: IDeviceInfo unavailable for SetOsName");
+            return Core::ERROR_UNAVAILABLE;
+        }
+
+        const Core::hresult rc = di->OsName(osName);
+        di->Release();
+
+        if (rc != Core::ERROR_NONE)
+        {
+            LOGERR("SystemDelegate: IDeviceInfo::OsName(set) failed rc=%u", rc);
+            return Core::ERROR_GENERAL;
+        }
+        return Core::ERROR_NONE;
+    }
+
+    // PUBLIC_INTERFACE
+    // Device.osName — reads operating system name from DeviceInfo.osname
+    Core::hresult GetDeviceOsName(std::string &result)
+    {
+        result.clear();
+        if (nullptr == _shell) return Core::ERROR_UNAVAILABLE;
+
+        auto* di = _shell->QueryInterfaceByCallsign<Exchange::IDeviceInfo>(DEVICEINFO_CALLSIGN);
+        if (nullptr == di)
+        {
+            LOGWARN("SystemDelegate: IDeviceInfo unavailable for GetOsName");
+            return Core::ERROR_UNAVAILABLE;
+        }
+
+        Exchange::IDeviceInfo::DeviceOsName info{};
+        const Core::hresult rc = di->OsName(info);
+        di->Release();
+
+        if (rc != Core::ERROR_NONE)
+        {
+            LOGERR("SystemDelegate: IDeviceInfo::OsName(get) failed rc=%u", rc);
+            return Core::ERROR_GENERAL;
+        }
+        Core::JSON::String jsonStr;
+        jsonStr = info.osName;
+        jsonStr.ToString(result);
+        return Core::ERROR_NONE;
+    }
+
+    // PUBLIC_INTERFACE
+    // Device.setOsVersion — writes operating system version to DeviceInfo.osversion (persisted)
+    Core::hresult SetDeviceOsVersion(const std::string &osVersion)
+    {
+        if (nullptr == _shell) return Core::ERROR_UNAVAILABLE;
+
+        auto* di = _shell->QueryInterfaceByCallsign<Exchange::IDeviceInfo>(DEVICEINFO_CALLSIGN);
+        if (nullptr == di)
+        {
+            LOGWARN("SystemDelegate: IDeviceInfo unavailable for SetOsVersion");
+            return Core::ERROR_UNAVAILABLE;
+        }
+
+        const Core::hresult rc = di->OsVersion(osVersion);
+        di->Release();
+
+        if (rc != Core::ERROR_NONE)
+        {
+            LOGERR("SystemDelegate: IDeviceInfo::OsVersion(set) failed rc=%u", rc);
+            return Core::ERROR_GENERAL;
+        }
+        return Core::ERROR_NONE;
+    }
+
+    // PUBLIC_INTERFACE
+    // Device.osVersion — reads operating system version from DeviceInfo.osversion
+    Core::hresult GetDeviceOsVersion(std::string &result)
+    {
+        result.clear();
+        if (nullptr == _shell) return Core::ERROR_UNAVAILABLE;
+
+        auto* di = _shell->QueryInterfaceByCallsign<Exchange::IDeviceInfo>(DEVICEINFO_CALLSIGN);
+        if (nullptr == di)
+        {
+            LOGWARN("SystemDelegate: IDeviceInfo unavailable for GetOsVersion");
+            return Core::ERROR_UNAVAILABLE;
+        }
+
+        Exchange::IDeviceInfo::DeviceOsVersion info{};
+        const Core::hresult rc = di->OsVersion(info);
+        di->Release();
+
+        if (rc != Core::ERROR_NONE)
+        {
+            LOGERR("SystemDelegate: IDeviceInfo::OsVersion(get) failed rc=%u", rc);
+            return Core::ERROR_GENERAL;
+        }
+        Core::JSON::String jsonStr;
+        jsonStr = info.osVersion;
+        jsonStr.ToString(result);
+        return Core::ERROR_NONE;
+    }
+
+    // PUBLIC_INTERFACE
+    // Device.firmware — reads firmware image name from DeviceInfo.firmwareversion.imagename
+    Core::hresult GetDeviceFirmware(std::string &result)
+    {
+        result.clear();
+        if (nullptr == _shell) return Core::ERROR_UNAVAILABLE;
+
+        auto* di = _shell->QueryInterfaceByCallsign<Exchange::IDeviceInfo>(DEVICEINFO_CALLSIGN);
+        if (nullptr == di)
+        {
+            LOGWARN("SystemDelegate: IDeviceInfo unavailable for FirmwareVersion");
+            return Core::ERROR_UNAVAILABLE;
+        }
+
+        Exchange::IDeviceInfo::FirmwareversionInfo info{};
+        const Core::hresult rc = di->FirmwareVersion(info);
+        di->Release();
+
+        if (rc != Core::ERROR_NONE)
+        {
+            LOGERR("SystemDelegate: IDeviceInfo::FirmwareVersion failed rc=%u", rc);
+            return Core::ERROR_GENERAL;
+        }
+        Core::JSON::String jsonStr;
+        jsonStr = info.imagename;
+        jsonStr.ToString(result);
+        return Core::ERROR_NONE;
+    }
+
     // PUBLIC_INTERFACE
     bool EmitOnTimezoneChanged(const WPEFramework::Core::JSON::VariantContainer& params)
     {
@@ -2008,25 +2186,33 @@ private:
     void OnDisplaySettingsResolutionChanged(const WPEFramework::Core::JSON::VariantContainer& params)
     {
         (void)params;
-        LOGINFO("[AppGatewayCommon|DisplaySettings.resolutionChanged] Incoming alias=%s.%s, invoking handlers...",
+        LOGINFO("[AppGatewayCommon|DisplaySettings.resolutionChanged] Incoming alias=%s.%s, posting to workerpool...",
                 DISPLAYSETTINGS_CALLSIGN, "resolutionChanged");
-        // Re-query state and dispatch debounced events
-        const bool screenEmitted = EmitOnScreenResolutionChanged();
-        const bool videoEmitted = EmitOnVideoResolutionChanged();
-        LOGINFO("[AppGatewayCommon|DisplaySettings.resolutionChanged] Handler responses: onScreenResolutionChanged=%s onVideoResolutionChanged=%s",
-                screenEmitted ? "emitted" : "skipped", videoEmitted ? "emitted" : "skipped");
+        // Re-query state and dispatch debounced events on a worker-pool thread, NOT on this
+        // notification thread, to avoid a blocking COM-RPC call back into the same plugin
+        // that is currently dispatching this event (circular-wait/timeout risk).
+        PostToWorkerPool([this]() {
+            const bool screenEmitted = EmitOnScreenResolutionChanged();
+            const bool videoEmitted = EmitOnVideoResolutionChanged();
+            LOGINFO("[AppGatewayCommon|DisplaySettings.resolutionChanged] Handler responses: onScreenResolutionChanged=%s onVideoResolutionChanged=%s",
+                    screenEmitted ? "emitted" : "skipped", videoEmitted ? "emitted" : "skipped");
+        });
     }
 
     void OnHdcpProfileDisplayConnectionChanged(const WPEFramework::Core::JSON::VariantContainer& params)
     {
         (void)params;
-        LOGINFO("[AppGatewayCommon|HdcpProfile.onDisplayConnectionChanged] Incoming alias=%s.%s, invoking handlers...",
+        LOGINFO("[AppGatewayCommon|HdcpProfile.onDisplayConnectionChanged] Incoming alias=%s.%s, posting to workerpool...",
                 HDCPPROFILE_CALLSIGN, "onDisplayConnectionChanged");
-        // Re-query state and dispatch debounced events
-        const bool hdcpEmitted = EmitOnHdcpChanged();
-        const bool hdrEmitted = EmitOnHdrChanged();
-        LOGINFO("[AppGatewayCommon|HdcpProfile.onDisplayConnectionChanged] Handler responses: onHdcpChanged=%s onHdrChanged=%s",
-                hdcpEmitted ? "emitted" : "skipped", hdrEmitted ? "emitted" : "skipped");
+        // Re-query state and dispatch debounced events on a worker-pool thread, NOT on this
+        // notification thread, to avoid a blocking COM-RPC call back into the same plugin
+        // that is currently dispatching this event (circular-wait/timeout risk).
+        PostToWorkerPool([this]() {
+            const bool hdcpEmitted = EmitOnHdcpChanged();
+            const bool hdrEmitted = EmitOnHdrChanged();
+            LOGINFO("[AppGatewayCommon|HdcpProfile.onDisplayConnectionChanged] Handler responses: onHdcpChanged=%s onHdrChanged=%s",
+                    hdcpEmitted ? "emitted" : "skipped", hdrEmitted ? "emitted" : "skipped");
+        });
     }
 
     void OnSystemFriendlyNameChanged(const WPEFramework::Core::JSON::VariantContainer& params)
@@ -2043,12 +2229,16 @@ private:
     void OnDisplaySettingsAudioFormatChanged(const WPEFramework::Core::JSON::VariantContainer& params)
     {
         (void)params;
-        LOGINFO("[AppGatewayCommon|DisplaySettings.audioFormatChanged] Incoming alias=%s.%s, invoking handlers...",
+        LOGINFO("[AppGatewayCommon|DisplaySettings.audioFormatChanged] Incoming alias=%s.%s, posting to workerpool...",
                 DISPLAYSETTINGS_CALLSIGN, "audioFormatChanged");
-        // Re-query state and dispatch event
-        const bool audioEmitted = EmitOnAudioChanged();
-        LOGINFO("[AppGatewayCommon|DisplaySettings.audioFormatChanged] Handler responses: onAudioChanged=%s",
-                audioEmitted ? "emitted" : "skipped");
+        // Re-query state and dispatch event on a worker-pool thread, NOT on this notification
+        // thread, to avoid a blocking COM-RPC call back into the same plugin that is currently
+        // dispatching this event (circular-wait/timeout risk).
+        PostToWorkerPool([this]() {
+            const bool audioEmitted = EmitOnAudioChanged();
+            LOGINFO("[AppGatewayCommon|DisplaySettings.audioFormatChanged] Handler responses: onAudioChanged=%s",
+                    audioEmitted ? "emitted" : "skipped");
+        });
     }
 
     void OnSystemTimezoneChanged(const WPEFramework::Core::JSON::VariantContainer& params)

@@ -187,10 +187,10 @@ uint32_t Test_HandleRequest_DeviceAudio()
 }
 
 // TEST_ID: AGC_L0_026A
-// Handler-map getter: device.dolbyatmosexperience
+// Handler-map getter: device.dolbyatmosexperienceavailable
 uint32_t Test_HandleRequest_DeviceDolbyAtmosExperience()
 {
-    return DelegateGetterTest("device.dolbyatmosexperience");
+    return DelegateGetterTest("device.dolbyatmosexperienceavailable");
 }
 
 // TEST_ID: AGC_L0_027
@@ -691,10 +691,177 @@ uint32_t Test_HandleRequest_ParentalControl_ViewingRestrictions()
     return DelegateGetterTest("parentalcontrol.viewingrestrictions");
 }
 
+// TEST_ID: AGC_L0_104A
+// VideoOutput.resolution returns the safe default when Thunder is unavailable.
+uint32_t Test_HandleRequest_VideoOutputResolution_NoDisplay()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "videooutput.resolution", "{}", result);
+    ExpectEqU32(tr, rc, ERROR_NONE, "videooutput.resolution returns ERROR_NONE when Thunder is unavailable");
+    ExpectEqStr(tr, result, "{\"width\":0,\"height\":0}", "videooutput.resolution returns zeroed dimensions");
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_104B
+// VideoOutput.hdcp returns the safe default when Thunder is unavailable.
+uint32_t Test_HandleRequest_VideoOutputHdcp_NoDisplay()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "videooutput.hdcp", "{}", result);
+    ExpectEqU32(tr, rc, ERROR_NONE, "videooutput.hdcp returns ERROR_NONE when Thunder is unavailable");
+    ExpectEqStr(tr, result, "\"none\"", "videooutput.hdcp returns none when Thunder is unavailable");
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_104E
+// VideoOutput.colorFormat returns the safe default when Thunder is unavailable.
+uint32_t Test_HandleRequest_VideoOutputColorFormat_NoDisplay()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "videooutput.colorformat", "{}", result);
+    ExpectEqU32(tr, rc, ERROR_NONE, "videooutput.colorformat returns ERROR_NONE when Thunder is unavailable");
+    ExpectEqStr(tr, result, "\"none\"", "videooutput.colorformat returns \"none\" when Thunder is unavailable");
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_104F
+// VideoOutput.quantizationRange returns the safe default when Thunder is unavailable.
+uint32_t Test_HandleRequest_VideoOutputQuantizationRange_NoDisplay()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "videooutput.quantizationrange", "{}", result);
+    ExpectEqU32(tr, rc, ERROR_NONE, "videooutput.quantizationrange returns ERROR_NONE when Thunder is unavailable");
+    ExpectEqStr(tr, result, "\"none\"", "videooutput.quantizationrange returns \"none\" when Thunder is unavailable");
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_104C
+// VideoOutput.cecState returns the safe default when Thunder is unavailable.
+uint32_t Test_HandleRequest_VideoOutputCecActiveState_NoDisplay()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "videooutput.cecstate", "{}", result);
+    ExpectEqU32(tr, rc, ERROR_NONE, "videooutput.cecstate returns ERROR_NONE when Thunder is unavailable");
+    ExpectEqStr(tr, result, "\"unsupported\"", "videooutput.cecstate returns unsupported when Thunder is unavailable");
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_104D
+// VideoOutput.port returns the safe default when Thunder is unavailable.
+uint32_t Test_HandleRequest_VideoOutputPort_NoDisplay()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "videooutput.port", "{}", result);
+    ExpectEqU32(tr, rc, ERROR_NONE, "videooutput.port returns ERROR_NONE when Thunder is unavailable");
+    ExpectEqStr(tr, result, "\"none\"", "videooutput.port returns none when Thunder is unavailable");
+    return tr.failures;
+}
+
+// ─── VideoOutput routing tests ────────────────────────────────────────
+
+// TEST_ID: AGC_L0_110
+// Handler-map getter: videooutput.resolution
+uint32_t Test_HandleRequest_VideoOutputResolution()
+{
+    return DelegateGetterTest("videooutput.resolution");
+}
+
+// TEST_ID: AGC_L0_111
+// Handler-map getter: videooutput.hdcp
+uint32_t Test_HandleRequest_VideoOutputHdcp()
+{
+    return DelegateGetterTest("videooutput.hdcp");
+}
+
+// TEST_ID: AGC_L0_112
+// Handler-map getter: videooutput.cecstate
+uint32_t Test_HandleRequest_VideoOutputCecActiveState()
+{
+    return DelegateGetterTest("videooutput.cecstate");
+}
+
+// TEST_ID: AGC_L0_113
+// Handler-map getter: videooutput.port
+uint32_t Test_HandleRequest_VideoOutputPort()
+{
+    return DelegateGetterTest("videooutput.port");
+}
+
+// TEST_ID: AGC_L0_114
+// Handler-map getter: videooutput.refreshrate
+uint32_t Test_HandleRequest_VideoOutputRefreshRate()
+{
+    return DelegateGetterTest("videooutput.refreshrate");
+}
+
+// TEST_ID: AGC_L0_115
+// Handler-map getter: videooutput.colordepth
+uint32_t Test_HandleRequest_VideoOutputColorDepth()
+{
+    return DelegateGetterTest("videooutput.colordepth");
+}
+
+// TEST_ID: AGC_L0_116
+// Handler-map getter: videooutput.colorformat
+uint32_t Test_HandleRequest_VideoOutputColorFormat()
+{
+    return DelegateGetterTest("videooutput.colorformat");
+}
+
+// TEST_ID: AGC_L0_117
+// Handler-map getter: videooutput.colorimetry
+uint32_t Test_HandleRequest_VideoOutputColorimetry()
+{
+    return DelegateGetterTest("videooutput.colorimetry");
+}
+
+// TEST_ID: AGC_L0_118
+// Handler-map getter: videooutput.dynamicrange
+uint32_t Test_HandleRequest_VideoOutputDynamicRange()
+{
+    return DelegateGetterTest("videooutput.dynamicrange");
+}
+
+// TEST_ID: AGC_L0_119
+// Handler-map getter: videooutput.quantizationrange
+uint32_t Test_HandleRequest_VideoOutputQuantizationRange()
+{
+    return DelegateGetterTest("videooutput.quantizationrange");
+}
+
 // ============================================================================
 // Tests AGC_L0_108 – AGC_L0_109 — actions.start null/empty intent validation
 // ============================================================================
-
 // TEST_ID: AGC_L0_108
 // actions.start with {"intent":null} → ERROR_BAD_REQUEST
 // The intent field is JSON null; ActionsStart must reject it before forwarding.
@@ -720,8 +887,120 @@ uint32_t Test_HandleRequest_ActionsStart_EmptyObjectIntentField()
     QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
     std::string result;
     Exchange::GatewayContext ctx = DefaultContext();
+
     const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "actions.start", "{\"intent\":{}}", result);
     ExpectEqU32(tr, rc, ERROR_BAD_REQUEST, "actions.start with empty object intent field returns ERROR_BAD_REQUEST");
     return tr.failures;
 }
 
+// ============================================================================
+// texttospeech.speak tests
+// ============================================================================
+
+// texttospeech.speak with valid payload returns ERROR_UNAVAILABLE in L0
+// because the TTS COM-RPC interface (GetTTS()) is nullptr.
+uint32_t Test_HandleRequest_TextToSpeechSpeak_ValidPayload()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "texttospeech.speak", R"({"text":"Hello world"})", result);
+    ExpectEqU32(tr, rc, ERROR_UNAVAILABLE, "texttospeech.speak returns ERROR_UNAVAILABLE when TTS plugin unavailable");
+    return tr.failures;
+}
+
+// texttospeech.speak with empty payload returns ERROR_BAD_REQUEST.
+uint32_t Test_HandleRequest_TextToSpeechSpeak_EmptyPayload()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "texttospeech.speak", "", result);
+    ExpectEqU32(tr, rc, ERROR_BAD_REQUEST, "texttospeech.speak with empty payload returns ERROR_BAD_REQUEST");
+    return tr.failures;
+}
+
+// texttospeech.speak with null payload returns ERROR_BAD_REQUEST.
+uint32_t Test_HandleRequest_TextToSpeechSpeak_NullPayload()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "texttospeech.speak", "null", result);
+    ExpectEqU32(tr, rc, ERROR_BAD_REQUEST, "texttospeech.speak with null payload returns ERROR_BAD_REQUEST");
+    return tr.failures;
+}
+
+// texttospeech.speak with invalid JSON payload returns ERROR_BAD_REQUEST.
+uint32_t Test_HandleRequest_TextToSpeechSpeak_InvalidJSON()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "texttospeech.speak", "{invalid json}", result);
+    ExpectEqU32(tr, rc, ERROR_BAD_REQUEST, "texttospeech.speak with invalid JSON returns ERROR_BAD_REQUEST");
+    return tr.failures;
+}
+
+// texttospeech.speak with empty text returns ERROR_INVALID_INPUT_LENGTH.
+uint32_t Test_HandleRequest_TextToSpeechSpeak_EmptyText()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "texttospeech.speak", R"({"text":""})", result);
+    ExpectEqU32(tr, rc, ERROR_INVALID_INPUT_LENGTH, "texttospeech.speak with empty text returns ERROR_INVALID_INPUT_LENGTH");
+    return tr.failures;
+}
+
+// texttospeech.speak with empty callsign (from ctx.appId) returns ERROR_INVALID_INPUT_LENGTH.
+uint32_t Test_HandleRequest_TextToSpeechSpeak_EmptyCallsign()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+    ctx.appId = ""; // Empty callsign from context
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "texttospeech.speak", R"({"text":"Hello"})", result);
+    ExpectEqU32(tr, rc, ERROR_INVALID_INPUT_LENGTH, "texttospeech.speak with empty callsign returns ERROR_INVALID_INPUT_LENGTH");
+    return tr.failures;
+}
+
+// texttospeech.speak is case-insensitive: TEXTTOSPEECH.SPEAK is lowered
+// internally and routes to the same handler as texttospeech.speak.
+uint32_t Test_HandleRequest_TextToSpeechSpeak_CaseInsensitive()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "TEXTTOSPEECH.SPEAK", R"({"text":"Hello"})", result);
+    ExpectEqU32(tr, rc, ERROR_UNAVAILABLE, "TEXTTOSPEECH.SPEAK (uppercase) routes same as texttospeech.speak");
+    return tr.failures;
+}

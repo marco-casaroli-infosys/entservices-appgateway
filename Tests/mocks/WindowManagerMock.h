@@ -54,7 +54,13 @@ public:
     const bool focus,
     const string& capabilities),
     (override));
-    MOCK_METHOD(WPEFramework::Core::hresult, GetApps, (string& appsIds), (const, override));
+    MOCK_METHOD(WPEFramework::Core::hresult, GetApps, (IRDKWindowManager::IStringIterator*& appsIds), (const, override));
+    MOCK_METHOD(WPEFramework::Core::hresult, GetFocused, (string& client), (const, override));
+    MOCK_METHOD(WPEFramework::Core::hresult, ShowSplashScreen, (const bool show), (override));
+    MOCK_METHOD(WPEFramework::Core::hresult, SetBounds, (const string& clientId, const uint32_t x, const uint32_t y, const uint32_t width, const uint32_t height), (override));
+    MOCK_METHOD(WPEFramework::Core::hresult, GetBounds, (const string& clientId, uint32_t& x, uint32_t& y, uint32_t& width, uint32_t& height), (const, override));
+    MOCK_METHOD(WPEFramework::Core::hresult, SetScale, (const string& clientId, const double scaleX, const double scaleY), (override));
+    MOCK_METHOD(WPEFramework::Core::hresult, GetScale, (const string& clientId, double& scaleX, double& scaleY), (const, override));
     MOCK_METHOD(WPEFramework::Core::hresult, SetFocus, (const string& client), (override));
     MOCK_METHOD(WPEFramework::Core::hresult, SetVisible, (const std::string& client, bool visible), (override));
     MOCK_METHOD(WPEFramework::Core::hresult, AddKeyIntercept, (const string& intercept), (override));
