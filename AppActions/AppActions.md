@@ -1,428 +1,144 @@
-# AppActions Plugin
-
-> **Source files:** `AppActions/`
-> **Callsign:** `org.rdk.AppActions`
-> **Shared libraries:** `libWPEFrameworkAppActions.so` (plugin shell), `libWPEFrameworkAppActionsImplementation.so` (implementation)
-> **Version:** `1.0.0`
-
----
+# AppActions Subsystem
 
 ## 1. High-Level Purpose & Architecture
 
-### Role in ENT / RDK Infrastructure
+`AppActions` provides app-to-app action/intent dispatch in the ENT/RDK Thunder environment. A public plugin wrapper exposes JSON-RPC while `AppActionsImplementation` owns notification registration and asynchronous action delivery.
 
-`AppActions` is a Thunder plugin that provides **app-to-app action and intent dispatch** on RDK devices. It exposes a Firebolt-compatible JSON-RPC interface (`JAppActions`) that allows one application to request that another application handle a specific intent (e.g., open a URL, launch a media item).
+Responsibilities:
+- Register `org.rdk.AppActions` and expose generated `JAppActions` JSON-RPC methods.
+- Accept `ActionStart(initiator, intent, handlerAppId)` requests.
+- Deliver `OnActionStartRequest` callbacks asynchronously to registered consumers.
+- Configure telemetry through the App Gateway telemetry helper.
+- Handle out-of-process implementation failure notifications.
 
-It is a relatively thin plugin compared to `AppGateway` or `AppGatewayCommon`: it exposes a single action method (`ActionStart`) and a single notification event (`OnActionStartRequest`).
-
-### Responsibilities
-
-| Responsibility | Component |
-|---|---|
-| Accept an `ActionStart` request (initiator, intent, handlerAppId) | `AppActionsImplementation::ActionStart()` |
-| Notify registered listeners of new action-start requests | `AppActionsImplementation::DispatchActionStartRequest()` |
-| Propagate `OnActionStartRequest` event to JSON-RPC clients | `AppActions::Notification::OnActionStartRequest()` → `JAppActions::Event::OnActionStartRequest()` |
-| Manage listener registrations | `AppActionsImplementation::Register()` / `Unregister()` |
-
-### What AppActions Does NOT Do
-
-- Does **not** route WebSocket connections — those are handled by `AppGateway`.
-- Does **not** authenticate callers — authentication is performed upstream in `AppGateway`.
-- Does **not** implement business logic for the intents — the handler app fulfils the intent.
-
-### Interacting Subsystems
-
-```
-AppGatewayCommon::ActionsStart()
-  │  (COM-RPC → IAppActions)
-  ▼
-AppActionsImplementation::ActionStart()
-  │
-  ▼ DispatchActionStartRequest()
-  │
-  ▼ IAppActions::INotification::OnActionStartRequest()
-  │
-  ▼ AppActions::Notification (Core::Sink)
-  │
-  ▼ JAppActions::Event::OnActionStartRequest()  [JSON-RPC event to subscribed clients]
-```
-
----
+It does not select an application, implement application launch policy, or provide a WebSocket transport.
 
 ## 2. Architectural Overview
 
-### Two-Library Split
+The wrapper uses `IShell::Root<Exchange::IAppActions>` to connect to `AppActionsImplementation`. The implementation stores callback references behind `mAdminLock`; `NotifyJob` moves dispatch to the worker pool.
 
-Unlike the other plugins in this repository which compile to a single `.so`, `AppActions` compiles to **two separate shared libraries**:
-
-| Library | Sources | Role |
-|---|---|---|
-| `libWPEFrameworkAppActions.so` | `AppActions.cpp`, `AppActions.h`, `Module.cpp` | Thunder plugin shell; JSON-RPC server; aggregates `IAppActions` |
-| `libWPEFrameworkAppActionsImplementation.so` | `AppActionsImplementation.cpp`, `AppActionsImplementation.h`, `Module.cpp` | Out-of-process implementation; business logic |
-
-This follows the standard WPEFramework out-of-process plugin pattern: the shell runs in the main Thunder process and proxies calls to the implementation which runs in a separate process.
-
-### Component Diagram
-
-```mermaid
-graph TD
-    AGC[AppGatewayCommon\nActionsStart / ActionsIntent] -->|IAppActions COM-RPC| IMPL[AppActionsImplementation\nlibWPEFrameworkAppActionsImplementation.so]
-    IMPL -->|INotification OnActionStartRequest| NOTIF[AppActions Notification\nCore.Sink]
-    NOTIF -->|JAppActions Event| RPC[JSON-RPC clients\nsubscribed apps]
-    SHELL[AppActions\nlibWPEFrameworkAppActions.so] -->|service->Root IAppActions| IMPL
-    SHELL -->|INTERFACE_AGGREGATE| IMPL
+```text
+JSON-RPC client
+      |
+      v
+ AppActions wrapper
+      | Root / JAppActions
+      v
+AppActionsImplementation -- NotifyJob --> IAppActions::INotification clients
+      |
+      +--> AppGateway telemetry helper
 ```
 
----
+## 3. Code Organization (Folder & File-Level)
 
-## 3. Code Organization
-
-```
-AppActions/
-├── AppActions.h / .cpp                # Plugin shell (IPlugin + JSONRPC)
-├── AppActionsImplementation.h / .cpp  # Out-of-process implementation
-├── Module.h / .cpp                    # WPEFramework module declaration
-├── AppActions.conf.in                 # Thunder config template
-├── AppActions.config                  # CMake config script
-├── CMakeLists.txt                     # Builds TWO libraries
-└── docs/
-    └── (local docs)
-```
-
-### File Breakdown
-
-| File | Purpose | Key Types |
-|---|---|---|
-| `AppActions.h/.cpp` | Plugin shell; aggregates `IAppActions` via `INTERFACE_AGGREGATE`; sinks `IAppActions::INotification` and `RPC::IRemoteConnection::INotification` | `AppActions`, `AppActions::Notification` |
-| `AppActionsImplementation.h/.cpp` | Implementation plugin: `IPlugin`, `IAppActions`, `IConfiguration`; manages notification list; dispatches `OnActionStartRequest` | `AppActionsImplementation`, `ActionStart()`, `DispatchActionStartRequest()` |
-| `Module.h/.cpp` | WPEFramework module boilerplate | `MODULE_NAME=Plugin_AppActions` |
-
----
+- `AppActions/AppActions.h`: wrapper plugin, remote notification class, interface map, and lifecycle members.
+- `AppActions/AppActions.cpp`: service registration, implementation root/configuration, JSON-RPC register/unregister, OOP cleanup.
+- `AppActions/AppActionsImplementation.h`: implementation interfaces, callback list, lock, and `NotifyJob`.
+- `AppActions/AppActionsImplementation.cpp`: action dispatch, registration, configuration, telemetry, and teardown.
+- `AppActions/AppActions.conf.in`: platform precondition, callsign, autostart/startup order, and implementation locator template.
+- `AppActions/CMakeLists.txt`: builds wrapper and implementation shared libraries.
+- `AppActions/tests/README.md`: unit/integration test notes.
 
 ## 4. Class & Interface Documentation
 
-### 4.1 `AppActions` — Plugin Shell
+### `Plugin::AppActions`
 
-**File:** `AppActions/AppActions.h`, `AppActions/AppActions.cpp`
+Implements `IPlugin` and `JSONRPC`, aggregates `Exchange::IAppActions`, and owns shell, connection ID, implementation, configuration interface, and `Notification`. `Notification` implements both `IAppActions::INotification` and `RPC::IRemoteConnection::INotification`; it forwards action events to generated JSON-RPC notifications and reports remote deactivation.
 
-**Inherits:** `PluginHost::IPlugin`, `PluginHost::JSONRPC`
+Actual interface map excerpt from [`AppActions.h`](../AppActions/AppActions.h):
 
-**Interface map:**
 ```cpp
-// AppActions/AppActions.h (excerpt)
-BEGIN_INTERFACE_MAP(AppActions)
 INTERFACE_ENTRY(PluginHost::IPlugin)
 INTERFACE_ENTRY(PluginHost::IDispatcher)
 INTERFACE_AGGREGATE(Exchange::IAppActions, mAppActions)
-END_INTERFACE_MAP
 ```
 
-**Key private members:**
+### `AppActionsImplementation`
 
-| Member | Type | Purpose |
-|---|---|---|
-| `mService` | `PluginHost::IShell*` | Thunder service shell |
-| `mConnectionId` | `uint32_t` | RPC connection ID for the out-of-process implementation |
-| `mAppActions` | `Exchange::IAppActions*` | Rooted out-of-process implementation |
-| `mAppActionsNotification` | `Core::Sink<Notification>` | Receives `IAppActions::INotification` callbacks |
-| `mAppActionsConfigure` | `Exchange::IConfiguration*` | Interface for configuring the implementation |
+Implements `IPlugin`, `IAppActions`, and `IConfiguration`. `ActionStart` submits `NotifyJob`; `Register` AddRefs and stores unique callbacks; `Unregister` releases and removes them; `DispatchActionStartRequest` snapshots/AddRefs callbacks before invoking them outside the lock.
 
-#### `AppActions::Notification` inner class
+### `NotifyJob`
 
-Implements both `Exchange::IAppActions::INotification` and `RPC::IRemoteConnection::INotification`.
-
-```cpp
-// AppActions/AppActions.h (excerpt)
-void OnActionStartRequest(const string& initiator, const string& intent,
-                          const string& handlerAppId) {
-    Exchange::JAppActions::Event::OnActionStartRequest(
-        _parent, initiator, intent, handlerAppId);
-}
-```
-
-When `AppActionsImplementation` calls back via `IAppActions::INotification::OnActionStartRequest()`, this sink fires `JAppActions::Event::OnActionStartRequest()` which broadcasts the JSON-RPC event to all subscribed clients.
-
----
-
-### 4.2 `AppActionsImplementation` — Out-of-Process Implementation
-
-**File:** `AppActions/AppActionsImplementation.h`, `AppActions/AppActionsImplementation.cpp`
-
-**Implements:** `PluginHost::IPlugin`, `Exchange::IAppActions`, `Exchange::IConfiguration`
-
-**Interface map:**
-```cpp
-// AppActions/AppActionsImplementation.h (excerpt)
-BEGIN_INTERFACE_MAP(AppActionsImplementation)
-INTERFACE_ENTRY(Exchange::IConfiguration)
-INTERFACE_ENTRY(PluginHost::IPlugin)
-INTERFACE_ENTRY(Exchange::IAppActions)
-END_INTERFACE_MAP
-```
-
-**Key Members:**
-
-| Member | Type | Purpose |
-|---|---|---|
-| `mService` | `PluginHost::IShell*` | Thunder service shell |
-| `mAppActionsNotifications` | `std::list<INotification*>` | Registered notification listeners |
-| `mAdminLock` | `Core::CriticalSection` | Guards `mAppActionsNotifications` |
-
-**Key Methods:**
-
-| Method | Description |
-|---|---|
-| `Configure(IShell*)` | `IConfiguration` entry; stores service shell |
-| `ActionStart(initiator, intent, handlerAppId)` | Receives the action start request; calls `DispatchActionStartRequest()` |
-| `DispatchActionStartRequest(initiator, intent, handlerAppId)` | Iterates `mAppActionsNotifications` and calls `OnActionStartRequest()` on each |
-| `Register(INotification*)` | Add a notification listener (thread-safe) |
-| `Unregister(INotification*)` | Remove a notification listener (thread-safe) |
-
-**Dispatch implementation pattern:**
-
-```cpp
-// AppActionsImplementation.cpp — DispatchActionStartRequest
-void AppActionsImplementation::DispatchActionStartRequest(
-        const string& initiator, const string& intent, const string& handlerAppId) {
-    mAdminLock.Lock();
-    for (auto* notification : mAppActionsNotifications) {
-        notification->OnActionStartRequest(initiator, intent, handlerAppId);
-    }
-    mAdminLock.Unlock();
-}
-```
-
----
-
-### 4.3 `IAppActions` Interface (Exchange)
-
-The interface is defined in `interfaces/IAppActions.h` (not in this repository). Key surface:
-
-| Method | Direction | Description |
-|---|---|---|
-| `ActionStart(initiator, intent, handlerAppId)` | Caller → Implementation | Trigger an action start |
-| `Register(INotification*)` | Caller → Implementation | Register for `OnActionStartRequest` events |
-| `Unregister(INotification*)` | Caller → Implementation | Unregister |
-| `INotification::OnActionStartRequest(initiator, intent, handlerAppId)` | Implementation → Caller | Fired when an action start occurs |
-
----
+A `Core::IDispatch` job containing initiator, intent, and handler app ID. It AddRefs its parent on construction and releases it on destruction, preventing the implementation from disappearing before asynchronous delivery.
 
 ## 5. Configuration & Build Integration
 
-### CMake Build (`AppActions/CMakeLists.txt`)
+`AppActions.conf.in` declares `org.rdk.AppActions`, `precondition = ["Platform"]`, generated autostart/startup order, `mode`, and `locator = "lib@PLUGIN_IMPLEMENTATION@.so"`. CMake sets version `1.0.0`, builds `${NAMESPACE}AppActions` and `${NAMESPACE}AppActionsImplementation`, uses C++11, links Thunder plugins/definitions and `uuid`, and installs both libraries.
 
-This is the only plugin in the repository that produces **two libraries from one `CMakeLists.txt`**:
-
-```cmake
-# Shell library
-add_library(${MODULE_NAME} SHARED
-    AppActions.cpp  AppActions.h  Module.cpp)
-
-# Implementation library
-add_library(${PLUGIN_IMPLEMENTATION} SHARED
-    AppActionsImplementation.cpp  AppActionsImplementation.h  Module.cpp)
-```
-
-**Key CMake options:**
-
-| Option | Default | Effect |
-|---|---|---|
-| `PLUGIN_APPACTIONS` | — | Must be `ON` |
-| `PLUGIN_APPACTIONS_AUTOSTART` | `"false"` | Thunder autostart |
-| `PLUGIN_APPACTIONS_STARTUPORDER` | `""` | Plugin startup sequence |
-
-**Linked libraries (both targets):** `${NAMESPACE}Plugins`, `${NAMESPACE}Definitions`, `uuid`
-
-**Install targets:**
-- Shell: `${CMAKE_INSTALL_PREFIX}/lib/${STORAGE_DIRECTORY}/plugins`
-- Implementation: `lib/${STORAGE_DIRECTORY}/plugins`
-
-### Plugin Configuration
-
-```cmake
-# AppActions/AppActions.config
-set(autostart "false")
-set(callsign "org.rdk.AppActions")
-```
-
----
+The implementation uses `-Wall -Werror` and `-Wl,-z,defs`. The root build flag is `PLUGIN_APPACTIONS`; telemetry helper behavior depends on the root telemetry option.
 
 ## 6. Internal Workflows & Execution Flow
 
-### 6.1 Plugin Initialization
-
-```
-Thunder calls AppActions::Initialize(service)
-  ├── Store mService
-  ├── service->Root<IAppActions>(mConnectionId, timeout, "AppActionsImplementation")
-  │     └── AppActionsImplementation::Initialize(service)
-  │     └── AppActionsImplementation::Configure(service)
-  ├── mAppActions->Register(&mAppActionsNotification)   // subscribe for callbacks
-  └── Exchange::JAppActions::Register(*this, mAppActions) // expose JSON-RPC methods
-```
-
-### 6.2 Action Start Flow
-
-```
-AppGatewayCommon::ActionsStart(ctx, payload, result)
-  └── IAppActions::ActionStart(initiator, intent, handlerAppId)  [COM-RPC]
-        └── AppActionsImplementation::ActionStart(...)
-              └── DispatchActionStartRequest(initiator, intent, handlerAppId)
-                    └── for each INotification* in mAppActionsNotifications:
-                          └── notification->OnActionStartRequest(initiator, intent, handlerAppId)
-                                └── AppActions::Notification::OnActionStartRequest()
-                                      └── JAppActions::Event::OnActionStartRequest()
-                                            └── JSON-RPC event broadcast to subscribed clients
-```
-
-### 6.3 Notification Registration
-
-```
-Client subscribes to "onActionStartRequest" JSON-RPC event
-  └── Thunder JSON-RPC subscription
-        └── AppActions JSONRPC server records subscription
-              └── On ActionStart: JAppActions::Event::OnActionStartRequest() broadcasts event
-```
-
-### 6.4 Shutdown
-
-```
-Thunder calls AppActions::Deinitialize(service)
-  ├── Exchange::JAppActions::Unregister(*this)
-  ├── mAppActions->Unregister(&mAppActionsNotification)
-  ├── mAppActions->Release()
-  └── mService->Release()
-```
-
-### 6.5 Remote Connection Drop Handling
-
-```
-RPC::IRemoteConnection::INotification::Deactivated(connection)
-  └── AppActions::Deactivated(connection)
-        └── if connection->Id() == mConnectionId:
-              └── Initiate plugin deactivation / cleanup
-```
-
-### 6.6 Error Handling
-
-- `ActionStart()` returns `Core::hresult`; errors are logged via `LOGINFO()` / `LOGERR()`.
-- `Register()` / `Unregister()` are guarded by `mAdminLock` to prevent race conditions.
-- Remote process death is handled via `Deactivated()` callback.
-
----
+- **Startup:** wrapper AddRefs shell, registers COM-link notification when available, roots `AppActionsImplementation`, obtains `IConfiguration`, configures it, registers implementation notifications, and registers `JAppActions`.
+- **Action write:** caller invokes `ActionStart`; implementation enqueues `NotifyJob`; the worker invokes every registered callback.
+- **Event read:** wrapper notification forwards callback data through `JAppActions::Event::OnActionStartRequest`.
+- **Failure:** remote deactivation schedules a Thunder `DEACTIVATED/FAILURE` job when connection IDs match.
+- **Shutdown:** unregister COM-link and implementation listeners, terminate remote connection, unregister JSON-RPC, release interfaces and shell, and reset connection ID.
 
 ## 7. Diagrams & Visual Aids
 
-### 7.1 Class Diagram
+### Architecture
+
+```mermaid
+flowchart LR
+  A[JSON-RPC client] --> W[AppActions wrapper]
+  W --> I[AppActionsImplementation]
+  I --> J[NotifyJob]
+  J --> N[Registered notifications]
+  I --> T[Telemetry client]
+```
+
+### Class
 
 ```mermaid
 classDiagram
-    class AppActions {
-        +Initialize(service) string
-        +Deinitialize(service) void
-        -mAppActions : IAppActions
-        -mAppActionsNotification : Sink~Notification~
-        -mAppActionsConfigure : IConfiguration
-    }
-    class AppActionsNotification {
-        +OnActionStartRequest(initiator, intent, handlerAppId) void
-        +Activated(connection) void
-        +Deactivated(connection) void
-    }
-    class AppActionsImplementation {
-        +ActionStart(initiator, intent, handlerAppId) hresult
-        +Register(notification) hresult
-        +Unregister(notification) hresult
-        +DispatchActionStartRequest(initiator, intent, handlerAppId) void
-        -mAppActionsNotifications : list~INotification ptr~
-        -mAdminLock : CriticalSection
-    }
-
-    AppActions --> AppActionsImplementation : roots out-of-process
-    AppActions --> AppActionsNotification : owns via Core.Sink
-    AppActionsImplementation --> AppActionsNotification : notifies via INotification
+  class AppActions
+  class AppActionsImplementation
+  class Notification
+  class NotifyJob
+  AppActions --> Notification
+  AppActions o--> AppActionsImplementation
+  AppActionsImplementation --> NotifyJob
+  Notification --> AppActions
 ```
 
-### 7.2 Action Start Sequence
+### Read/write sequence
 
 ```mermaid
 sequenceDiagram
-    participant AGC as AppGatewayCommon
-    participant AI as AppActionsImplementation
-    participant AN as AppActions Notification
-    participant RPC as JSON-RPC Clients
-
-    AGC->>AI: ActionStart(appA, launch-video, appB)
-    AI->>AI: DispatchActionStartRequest()
-    AI->>AN: OnActionStartRequest(appA, launch-video, appB)
-    AN->>RPC: broadcast OnActionStartRequest event
-    RPC-->>AGC: event delivered to subscribed apps
+  participant C as Client
+  participant W as Wrapper
+  participant I as Implementation
+  participant J as Worker job
+  participant N as Notification
+  C->>W: ActionStart(initiator, intent, handlerAppId)
+  W->>I: ActionStart(...)
+  I->>J: Submit NotifyJob
+  J->>N: OnActionStartRequest(...)
+  N-->>C: JSON-RPC event
 ```
 
-### 7.3 Plugin Lifecycle
+### Lifecycle activity
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Unloaded
-    Unloaded --> Initializing : Thunder loads AppActions
-    Initializing --> RootingImpl : service->Root IAppActions
-    RootingImpl --> RegisteringNotif : mAppActions->Register()
-    RegisteringNotif --> Ready : JAppActions Register()
-    Ready --> Dispatching : ActionStart() received
-    Dispatching --> Ready : dispatch complete
-    Ready --> Deinitializing : Thunder deactivates
-    Deinitializing --> Unloaded : all releases done
-    RootingImpl --> Error : Root() fails
-    Error --> Unloaded : cleanup
+flowchart TD
+  A([Activate]) --> B[Root and configure implementation]
+  B --> C[Register callbacks and JSON-RPC]
+  C --> D[Dispatch actions]
+  D --> E[Unregister and terminate remote connection]
+  E --> F([Deactivate])
 ```
 
----
+## 8. Testing & Quality Analysis
 
-## 8. Testing & Quality
+L0 tests cover implementation, `ActionStart`, notifications, and init/deinit under `Tests/L0Tests/AppActions`. L1 coverage is `Tests/L1Tests/AppActions/AppActions_test.cpp`. The plugin also has test notes under `AppActions/tests/README.md`.
 
-### Existing Tests (`Tests/L1Tests/AppActions/`)
+Recommended additions include callback ordering/duplicate registration tests, callback removal during dispatch, COM-link absence and remote crash scenarios, and telemetry failure isolation. Full application-launch behavior is outside this repository.
 
-| Test File | Coverage Area |
-|---|---|
-| `AppActions_test.cpp` | `ActionStart()` dispatch, notification registration/unregistration |
+## 9. Beginner-to-Expert Teaching Mode
 
-### Relevant Mocks
+**Must know first:** the wrapper is the public Thunder/JSON-RPC surface; the implementation is the callback broker; worker jobs prevent the caller from being blocked.
 
-| Mock | Purpose |
-|---|---|
-| `Tests/mocks/AppActionsMock.h` | `Exchange::IAppActions`, `IAppActions::INotification` |
-| `Tests/mocks/ServiceMock.h` | `PluginHost::IShell` |
-| `Tests/mocks/DispatcherMock.h` | `PluginHost::IDispatcher` |
+**Advanced path:** study COM interface maps, AddRef/Release ownership, snapshotting callbacks before external calls, OOP connection notifications, and generated JSON-RPC event stubs.
 
-### Missing Coverage & Suggestions
-
-- No test for the remote-process-death path (`Deactivated()` callback).
-- No test for concurrent `Register()` / `Unregister()` calls (thread safety of `mAdminLock`).
-- No test for the JSON-RPC event broadcast (`JAppActions::Event::OnActionStartRequest()`).
-- **Suggestion:** Add a test that registers multiple `INotification` listeners and verifies all are called when `ActionStart()` fires.
-- **Suggestion:** Add a test that calls `Unregister()` during dispatch (listener removal while iterating) to verify lock safety.
-
----
-
-## 9. Beginner-to-Expert Learning Path
-
-### Must-Know First
-
-1. Understand the WPEFramework out-of-process plugin pattern — two libraries, one shell that proxies via COM-RPC to the implementation.
-2. Read `AppActions.h` — note the `INTERFACE_AGGREGATE` entry and the `Core::Sink<Notification>` member.
-3. Read `AppActionsImplementation.h` — note the three interfaces it implements and the notification list.
-
-### Intermediate
-
-4. Trace a full `ActionStart()` call from `AppGatewayCommon::ActionsStart()` → `IAppActions::ActionStart()` → `AppActionsImplementation::DispatchActionStartRequest()` → `JAppActions::Event::OnActionStartRequest()`.
-5. Understand why there are **two libraries**: the shell runs in-process with Thunder; the implementation runs in a separate sandboxed process. COM-RPC transparently bridges them.
-6. Study `AppActions::Notification` — it is the critical bridge between the out-of-process COM-RPC callback and the in-process JSON-RPC event broadcast.
-
-### Advanced
-
-7. **Adding a new action type** — extend `IAppActions` with a new method in the Exchange interface definition; implement it in `AppActionsImplementation`; add the corresponding JSON-RPC handler and event in `JAppActions`.
-8. **Understanding `Core::Sink<T>`** — a WPEFramework pattern for safely implementing notification interfaces as members of another class; study how `mAppActionsNotification` is passed to `mAppActions->Register()` and how it receives callbacks.
-
----
-
-*Back to [README.md](../README.md) | Related: [AppGateway.md](../AppGateway/AppGateway.md) | [AppGatewayCommon.md](../AppGatewayCommon/AppGatewayCommon.md)*
+**Known limits:** action routing after notification delivery is not implemented in these files; consumers decide how to handle the action.
