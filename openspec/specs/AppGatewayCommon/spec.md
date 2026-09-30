@@ -17,12 +17,17 @@ Define the runtime contract implemented by `AppGatewayCommon/`: COM-RPC request 
 
 ### Requirement: Synchronous request dispatch
 
-`HandleAppGatewayRequest` SHALL lowercase the incoming method and synchronously invoke the corresponding static handler-map function. If `mDelegate` is null it SHALL return `Core::ERROR_UNAVAILABLE` with `{"error":"Service unavailable"}`. If no mapped handler exists, it SHALL attempt `HandleAppDelegateRequest`.
+`HandleAppGatewayRequest` SHALL lowercase the incoming method and synchronously invoke the corresponding static handler-map function. If `mDelegate` is null it SHALL return `Core::ERROR_UNAVAILABLE` with `{"error":"Service unavailable"}`. Advertising ID and device UID SHALL delegate through their explicit handler-map entries; if no mapped or source-defined special-case handler exists, it SHALL call `ErrorUtils::NotSupported` and return `Core::ERROR_UNKNOWN_KEY`.
 
 #### Scenario: Method has a mapped handler
 
 - **WHEN** the lowercased method exists in `handlers`
 - **THEN** its member handler SHALL execute on the incoming COM-RPC service thread and return its `Core::hresult` and payload
+
+#### Scenario: Method is unsupported
+
+- **WHEN** the lowercased method matches neither a handler-map entry nor a source-defined special case
+- **THEN** the component SHALL return `Core::ERROR_UNKNOWN_KEY` with the payload produced by `ErrorUtils::NotSupported`
 
 ### Requirement: Supported request families
 
@@ -53,12 +58,17 @@ The handler map SHALL implement the source-defined families below while `AppGate
 
 ### Requirement: Event callback dispatch
 
-All delegate `BaseEventDelegate::Dispatch` calls SHALL submit `EventDelegateDispatchJob`. That job SHALL snapshot registered emitters under `mRegisterMutex` and invoke `IEmitter::Emit(event,payload,appId)` on a WorkerPool thread. Producer callbacks SHALL not invoke registered emitters directly.
+`BaseEventDelegate::Dispatch` SHALL submit `EventDelegateDispatchJob` only when the event currently has a registered emitter; otherwise it SHALL return false without submitting work. The job SHALL snapshot registered emitters under `mRegisterMutex` and invoke `IEmitter::Emit(event,payload,appId)` on a WorkerPool thread. Producer callbacks SHALL not invoke registered emitters directly.
 
-#### Scenario: Delegate emits an event
+#### Scenario: Delegate emits a registered event
 
-- **WHEN** a producer callback calls `Dispatch`
+- **WHEN** a producer callback calls `Dispatch` for an event with a registered emitter
 - **THEN** emitter fan-out SHALL occur asynchronously through `EventDelegateDispatchJob`
+
+#### Scenario: Delegate emits an unregistered event
+
+- **WHEN** a producer callback calls `Dispatch` for an event without a registered emitter
+- **THEN** `Dispatch` SHALL return false without submitting `EventDelegateDispatchJob`
 
 ### Requirement: Deferred re-query callbacks
 
@@ -146,7 +156,7 @@ flowchart LR
 | Lifecycle/presentation/actions | lifecycle v1/v2 close/state, ready, finished, presentation focus, `actions.start`, `actions.intent`, internal intent dispatch/get/set |
 | Storage/statistics | advertising ID, device UID via AppDelegate/shared storage; memory usage |
 | Speech | `TextToSpeech.speak`; SpeechSynthesis voices, speak, cancel, pause, resume |
-| Stub/no-op | `Localization.addAdditionalInfo` and `SetName` return null; `discovery.watched` and every `metrics.*` prefix return success |
+| Stub/no-op | `Localization.addAdditionalInfo` returns null; `discovery.watched` and every `metrics.*` prefix return success |
 
 ### WorkerPool inventory
 
@@ -154,7 +164,7 @@ flowchart LR
 |---|---|---|
 | `PluginHost::IShell::Job` | `Deactivated` | report shell `DEACTIVATED/FAILURE`; `mConnectionId` is not assigned in this source |
 | `EventRegistrationJob` | `SafeSubmitEventRegistrationJob` | call `SettingsDelegate::HandleAppEventNotifier`, decrement tracked count |
-| `EventDelegateDispatchJob` | every `BaseEventDelegate::Dispatch` | snapshot emitters, then call `IEmitter::Emit` |
+| `EventDelegateDispatchJob` | `BaseEventDelegate::Dispatch` when the event has a registered emitter | snapshot emitters, then call `IEmitter::Emit` |
 | `SystemDelegate::WorkerPoolTask` | display resolution, HDCP connection, audio format callbacks | re-query and emit corresponding System events |
 | `VideoOutputDelegate::WorkerPoolTask` | resolution, display connection, active-source, connected-display callbacks | re-query and emit corresponding VideoOutput events |
 
@@ -237,9 +247,14 @@ sequenceDiagram
   else payload already available
     Sink->>Base: Dispatch(event, payload, appId)
   end
-  Base->>Pool: Submit(EventDelegateDispatchJob)
-  Pool->>Fanout: snapshot emitters under mRegisterMutex
-  Fanout->>Emitter: Emit(event, payload, appId)
+  Base->>Base: IsNotificationRegistered(event)
+  alt event has a registered emitter
+    Base->>Pool: Submit(EventDelegateDispatchJob)
+    Pool->>Fanout: snapshot emitters under mRegisterMutex
+    Fanout->>Emitter: Emit(event, payload, appId)
+  else event is unregistered
+    Note over Base,Pool: return false, no WorkerPool submission
+  end
 ```
 
 ### Shutdown drain

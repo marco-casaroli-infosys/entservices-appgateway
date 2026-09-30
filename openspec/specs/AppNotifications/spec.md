@@ -8,7 +8,7 @@ Define the runtime contract implemented by `AppNotifications/`: shell/root lifec
 
 ### Requirement: Shell initialization and aggregation
 
-`AppNotifications::Initialize` SHALL retain `IShell`, root `Exchange::IAppNotifications` with timeout 2000 and implementation name `AppNotificationsImplementation`, optionally query/configure `IConfiguration`, and expose the rooted interface through `INTERFACE_AGGREGATE`. Root success SHALL determine shell initialization success; missing `IConfiguration` or an ignored Configure result SHALL not independently fail it.
+`AppNotifications::Initialize` SHALL retain `IShell`, initialize telemetry, record bootstrap time, root `Exchange::IAppNotifications` with timeout 2000 and implementation name `AppNotificationsImplementation`, optionally query/configure `IConfiguration`, and expose the rooted interface through `INTERFACE_AGGREGATE`. Root success SHALL determine shell initialization success; missing `IConfiguration` or an ignored Configure result SHALL not independently fail it.
 
 #### Scenario: Root succeeds without configuration interface
 
@@ -26,7 +26,7 @@ Define the runtime contract implemented by `AppNotifications/`: shell/root lifec
 
 ### Requirement: Shell deinitialization
 
-The shell SHALL obtain `RemoteConnection(mConnectionId)`, release `mAppNotifications`, terminate/release the remote connection when present, reset connection state, and release `mService`. `Deactivated` contains a matching-ID WorkerPool failure path, but this component source SHALL not be assumed to register that callback.
+The shell SHALL deinitialize telemetry first. When `mAppNotifications` is non-null, it SHALL obtain `RemoteConnection(mConnectionId)`, release `mAppNotifications`, and terminate/release the remote connection when present. It SHALL then reset connection state and release `mService`. `Deactivated` contains a matching-ID WorkerPool failure path, but this component source SHALL not be assumed to register that callback.
 
 #### Scenario: Remote implementation exists
 
