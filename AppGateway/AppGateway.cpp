@@ -184,7 +184,7 @@ namespace Plugin {
         mConnectionId = 0;
         mService->Release();
         mService = nullptr;
-        SYSLOG(Logging::Shutdown, (string(_T("AppGateway::Deinitialize"))));
+        SYSLOG(Logging::Shutdown, (string(_T("AppGateway::Deinitialize exit"))));
     }
 
     void AppGateway::Deactivated(RPC::IRemoteConnection* connection)
