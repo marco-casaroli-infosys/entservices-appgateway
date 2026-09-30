@@ -595,7 +595,7 @@ namespace Plugin {
             payload["method_name"] = stats.methodName;
             payload["reporting_interval_sec"] = reportingIntervalSec;
 
-            if (stats.successCount > 0) {
+            if (0 < stats.successCount) {
                 const double avgSuccessLatency = stats.totalSuccessLatencyMs / stats.successCount;
                 const double minSuccess = (stats.minSuccessLatencyMs == std::numeric_limits<double>::max())
                     ? 0.0 : stats.minSuccessLatencyMs;
