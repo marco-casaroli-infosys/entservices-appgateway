@@ -51,11 +51,9 @@ namespace WPEFramework
 
         void AppNotificationsImplementation::Stop()
         {
-            if (mStopping) {
+            if (mStopping.exchange(true, std::memory_order_acq_rel)) {
                 return;
             }
-
-            mStopping = true;
 
             if (mShell != nullptr)
             {
@@ -68,7 +66,7 @@ namespace WPEFramework
                                             bool listen /* @in */,
                                             const string &module /* @in */,
                                             const string &event /* @in */) {
-            if (mStopping) {
+            if (mStopping.load(std::memory_order_acquire)) {
                 return Core::ERROR_ILLEGAL_STATE;
             }
             LOGTRACE("Subscribe [requestId=%d appId=%s connectionId=%d] register=%s, module=%s, event=%s, version=%s",
@@ -101,7 +99,7 @@ namespace WPEFramework
         Core::hresult AppNotificationsImplementation::Emit(const string &event /* @in */,
                                     const string &payload /* @in @opaque */,
                                     const string &appId /* @in */) {
-            if (mStopping) {
+            if (mStopping.load(std::memory_order_acquire)) {
                 return Core::ERROR_ILLEGAL_STATE;
             }
 
@@ -112,7 +110,7 @@ namespace WPEFramework
         }
 
         Core::hresult AppNotificationsImplementation::Cleanup(const uint32_t connectionId /* @in */, const string &origin /* @in */) {
-            if (mStopping) {
+            if (mStopping.load(std::memory_order_acquire)) {
                 return Core::ERROR_NONE;
             }
 
@@ -184,7 +182,7 @@ namespace WPEFramework
         }
 
         void AppNotificationsImplementation::SubscriberMap::EventUpdate(const string& key, const string& payloadStr, const string& appId ) {
-            if (mParent.mStopping) {
+            if (mParent.mStopping.load(std::memory_order_acquire)) {
                 return;
             }
 
@@ -293,7 +291,7 @@ namespace WPEFramework
         }
 
         bool AppNotificationsImplementation::ThunderSubscriptionManager::HandleNotifier(const string& module, const string& event, const bool& listen) {
-            if (mParent.mStopping) {
+            if (mParent.mStopping.load(std::memory_order_acquire)) {
                 return false;
             }
 

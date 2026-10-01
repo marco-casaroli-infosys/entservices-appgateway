@@ -21,6 +21,7 @@
 #include <interfaces/IAppGateway.h>
 #include <interfaces/IAppNotifications.h>
 #include <interfaces/IConfiguration.h>
+#include <atomic>
 #include <mutex>
 #include <map>
 #include "UtilsLogging.h"
@@ -247,7 +248,7 @@ namespace Plugin {
         };
 
     private:
-        bool mStopping;
+        std::atomic<bool> mStopping{false};
         PluginHost::IShell* mShell;
         SubscriberMap mSubMap;
         ThunderSubscriptionManager mThunderManager;
