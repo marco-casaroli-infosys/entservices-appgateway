@@ -1588,7 +1588,11 @@ namespace Plugin {
 
         std::string formattedPayload = FormatTelemetryPayload(contextPayload);
 
-        LOGINFO("marker=%s, payload=%s", AGW_MARKER_JOB_TIMING, formattedPayload.c_str());
+        if (payloadObj.HasLabel("queue_wait_ms") &&
+            payloadObj["queue_wait_ms"].Content() == Core::JSON::Variant::type::NUMBER &&
+            payloadObj["queue_wait_ms"].Number() > 250.0) {
+            LOGWARN("marker=%s, payload=%s", AGW_MARKER_JOB_TIMING, formattedPayload.c_str());
+        }
 #if 0 // Not sending the message to server for now
         Utils::Telemetry::sendMessage(const_cast<char*>(AGW_MARKER_JOB_TIMING),
                                         const_cast<char*>(formattedPayload.c_str()));
