@@ -914,7 +914,6 @@ class LifecycleDelegate : public BaseEventDelegate
         Dispatch("Lifecycle2.onStateChanged", mLifecycleStateRegistry.GetLifecycle2StateJson(appInstanceId), appId);
 
         HandleLifecycle1Update(appInstanceId, oldLifecycleState, newLifecycleState);
-
         // Background / Context: DispatchLastKnownIntent reads app specific intent from from mNavigationIntentRegistry
         // and emits Actions.onIntent.
         // Dispatch the intent only when this lifecycle update supplied a new navigation intent
