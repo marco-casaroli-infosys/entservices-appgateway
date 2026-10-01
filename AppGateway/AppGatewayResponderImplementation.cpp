@@ -58,6 +58,7 @@ namespace WPEFramework
 
         AppGatewayResponderImplementation::~AppGatewayResponderImplementation()
         {
+            mStopping.store(true, std::memory_order_release);
             LOGINFO("AppGatewayResponderImplementation destructor");
             
             // Clear WebSocket handlers before destruction to prevent use-after-free
@@ -128,6 +129,9 @@ namespace WPEFramework
             mWsManager.SetMessageHandler(
                 [this](const std::string &method, const std::string &params, const int requestId, const uint32_t connectionId)
                 {
+                    if (mStopping.load(std::memory_order_acquire)) {
+                        return;
+                    }
                     Core::IWorkerPool::Instance().Submit(WsMsgJob::Create(this, method, params, requestId, connectionId));
                 });
 
@@ -230,12 +234,18 @@ namespace WPEFramework
 
         Core::hresult AppGatewayResponderImplementation::Respond(const Context& context, const string& payload)
         {
+            if (mStopping.load(std::memory_order_acquire)) {
+                return Core::ERROR_NONE;
+            }
             Core::IWorkerPool::Instance().Submit(RespondJob::Create(this, context.connectionId, context.requestId, payload));
             return Core::ERROR_NONE;
         }
 
         Core::hresult AppGatewayResponderImplementation::Emit(const Context& context /* @in */, 
                 const string& method /* @in */, const string& payload /* @in @opaque */) {
+            if (mStopping.load(std::memory_order_acquire)) {
+                return Core::ERROR_NONE;
+            }
             // check if the connection is compliant with JSON RPC
             if (mCompliantJsonRpcRegistry.IsCompliantJsonRpc(context.connectionId)) {
                 Core::IWorkerPool::Instance().Submit(EmitJob::Create(this, context.connectionId, method, payload));
@@ -248,6 +258,9 @@ namespace WPEFramework
 
         Core::hresult AppGatewayResponderImplementation::Request(const uint32_t connectionId /* @in */, 
                 const uint32_t id /* @in */, const string& method /* @in */, const string& params /* @in @opaque */) {
+            if (mStopping.load(std::memory_order_acquire)) {
+                return Core::ERROR_NONE;
+            }
             Core::IWorkerPool::Instance().Submit(RequestJob::Create(this, connectionId, id, method, params));
             return Core::ERROR_NONE;
         }

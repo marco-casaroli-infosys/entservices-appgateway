@@ -26,6 +26,7 @@
 #include "ContextUtils.h"
 #include <com/com.h>
 #include <core/core.h>
+#include <atomic>
 #include <map>
 #include <unordered_set>
 #include <sstream>
@@ -378,6 +379,7 @@ namespace Plugin {
         mutable Core::CriticalSection mConnectionStatusImplLock;
         std::list<Exchange::IAppGatewayResponder::INotification*> mConnectionStatusNotification;
         bool mEnhancedLoggingEnabled;
+        std::atomic<bool> mStopping{false};
         CompliantJsonRpcRegistry mCompliantJsonRpcRegistry;
         DebugDisabledConnectionsRegistry mDebugDisabledConnectionsRegistry;
     };
