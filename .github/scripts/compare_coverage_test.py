@@ -905,5 +905,144 @@ class TestMainIntegration(unittest.TestCase):
         self.assertEqual(r.returncode, 0, msg=r.stdout + r.stderr)
 
 
+# ===========================================================================
+# Integration tests — L2 suite, mirroring the L0/L1 test matrix
+# ===========================================================================
+
+class TestL2CoverageIntegration(unittest.TestCase):
+    """
+    L2 is wired through the exact same code path as L0/L1 via --l2, so this
+    class mirrors the key scenarios from TestMainIntegration to confirm L2
+    is parsed, analysed, reported, and persisted to the baseline the same way.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _lcov(self, name: str, lf: int, lh: int) -> str:
+        return _write_lcov(self.tmp, name, lf, lh)
+
+    def _baseline(self, data: dict, name: str = "baseline.json") -> str:
+        return _write_baseline(self.tmp, data, name)
+
+    def _run(self, *args: str) -> subprocess.CompletedProcess:
+        return _run_script(*args)
+
+    # --- Scenario 1: L2 exceeds threshold AND baseline → PASS -------------------
+
+    def test_l2_exceeds_threshold_and_baseline(self):
+        bl = self._baseline({"L0": 77.0, "L1": 78.0, "L2": 77.0})
+        l0 = self._lcov("l0.info", 100, 80)
+        l1 = self._lcov("l1.info", 100, 82)
+        l2 = self._lcov("l2.info", 100, 80)  # 80 % >= 77 % baseline, >= threshold
+        r = self._run("--baseline", bl, "--l0", l0, "--l1", l1, "--l2", l2)
+        self.assertEqual(r.returncode, 0, msg=r.stdout + r.stderr)
+        self.assertIn("L2", r.stdout)
+        self.assertIn("[PASS]", r.stdout)
+
+    # --- Scenario: L2 below threshold → WARN, exit 0 (informational) ------------
+
+    def test_l2_below_threshold_warns(self):
+        bl = self._baseline({"L0": 75.0, "L1": 75.0, "L2": 70.0})
+        l0 = self._lcov("l0.info", 100, 80)
+        l1 = self._lcov("l1.info", 100, 80)
+        l2 = self._lcov("l2.info", 100, 70)  # 70 % < 75 % threshold
+        r = self._run("--baseline", bl, "--l0", l0, "--l1", l1, "--l2", l2)
+        self.assertEqual(r.returncode, 0, msg=r.stdout + r.stderr)
+        self.assertIn("[WARN]", r.stdout)
+        self.assertIn("below threshold", r.stdout)
+
+    # --- Scenario: L2 regresses below baseline (still above threshold) → WARN ---
+
+    def test_l2_regression_below_baseline_warns(self):
+        bl = self._baseline({"L0": 75.0, "L1": 75.0, "L2": 90.0})
+        l0 = self._lcov("l0.info", 100, 80)
+        l1 = self._lcov("l1.info", 100, 80)
+        l2 = self._lcov("l2.info", 100, 80)  # 80 % < 90 % baseline, but >= threshold
+        r = self._run("--baseline", bl, "--l0", l0, "--l1", l1, "--l2", l2)
+        self.assertEqual(r.returncode, 0, msg=r.stdout + r.stderr)
+        self.assertIn("[WARN]", r.stdout)
+        self.assertIn("dropped from baseline", r.stdout)
+
+    # --- Scenario: L2 artifact absent (job failed) → WARN, L0/L1 unaffected -----
+
+    def test_l2_missing_data_warns_l0_l1_unaffected(self):
+        bl = self._baseline({"L0": 75.0, "L1": 75.0, "L2": 75.0})
+        l0 = self._lcov("l0.info", 100, 80)
+        l1 = self._lcov("l1.info", 100, 80)
+        r = self._run("--baseline", bl, "--l0", l0, "--l1", l1)  # --l2 omitted
+        self.assertEqual(r.returncode, 0, msg=r.stdout + r.stderr)
+        self.assertIn("coverage data missing", r.stdout)
+        self.assertIn("[WARN]", r.stdout)
+        # L0/L1 rows still show PASS independently of L2's absence
+        self.assertIn("[PASS]", r.stdout)
+
+    # --- Scenario: no baseline (first-time setup) → L2 threshold-only check -----
+
+    def test_l2_first_time_setup_no_baseline(self):
+        bl = self._baseline({})
+        l0 = self._lcov("l0.info", 100, 80)
+        l1 = self._lcov("l1.info", 100, 80)
+        l2 = self._lcov("l2.info", 100, 80)
+        r = self._run("--baseline", bl, "--l0", l0, "--l1", l1, "--l2", l2)
+        self.assertEqual(r.returncode, 0, msg=r.stdout + r.stderr)
+        self.assertIn("[PASS]", r.stdout)
+
+    # --- All three suites combined: one failing must not mask the others --------
+
+    def test_all_three_suites_one_fails_others_pass(self):
+        bl = self._baseline({"L0": 75.0, "L1": 75.0, "L2": 75.0})
+        l0 = self._lcov("l0.info", 100, 80)  # PASS
+        l1 = self._lcov("l1.info", 100, 80)  # PASS
+        l2 = self._lcov("l2.info", 100, 70)  # WARN (below threshold)
+        r = self._run("--baseline", bl, "--l0", l0, "--l1", l1, "--l2", l2)
+        self.assertEqual(r.returncode, 0, msg=r.stdout + r.stderr)
+        self.assertIn("[PASS]", r.stdout)
+        self.assertIn("[WARN]", r.stdout)
+
+    # --- --output-json: L2 key emitted when present ------------------------------
+
+    def test_output_json_includes_l2_when_present(self):
+        bl = self._baseline({"L0": 75.0, "L1": 75.0, "L2": 75.0})
+        l0 = self._lcov("l0.info", 100, 80)
+        l1 = self._lcov("l1.info", 100, 82)
+        l2 = self._lcov("l2.info", 100, 81)
+        out = os.path.join(self.tmp, "new-baseline.json")
+        self._run(
+            "--baseline", bl,
+            "--l0", l0, "--l1", l1, "--l2", l2,
+            "--output-json", out,
+            "--commit", "abc123",
+            "--timestamp", "2026-01-01T00:00:00Z",
+        )
+        self.assertTrue(os.path.isfile(out), "output-json must be written")
+        with open(out) as fh:
+            data = json.load(fh)
+        self.assertEqual(data["L0"], 80.0)
+        self.assertEqual(data["L1"], 82.0)
+        self.assertEqual(data["L2"], 81.0)
+
+    # --- --output-json: L2 key omitted when --l2 not passed (backward compat) ---
+
+    def test_output_json_omits_l2_when_absent(self):
+        bl = self._baseline({"L0": 75.0, "L1": 75.0})
+        l0 = self._lcov("l0.info", 100, 80)
+        l1 = self._lcov("l1.info", 100, 82)
+        out = os.path.join(self.tmp, "new-baseline-no-l2.json")
+        self._run(
+            "--baseline", bl,
+            "--l0", l0, "--l1", l1,
+            "--output-json", out,
+        )
+        self.assertTrue(os.path.isfile(out), "output-json must still be written for L0/L1")
+        with open(out) as fh:
+            data = json.load(fh)
+        self.assertNotIn("L2", data)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

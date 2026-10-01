@@ -1059,6 +1059,7 @@ jobs:
           name: artifacts-L2-infra
           path: |
             coverage/
+            filtered_coverage.info
             valgrind_log
             rdkL2TestResultsWithoutValgrind.json
             rdkL2TestResultsWithValgrind.json

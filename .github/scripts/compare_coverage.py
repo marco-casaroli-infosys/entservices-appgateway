@@ -189,7 +189,7 @@ def load_baseline(path: str) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Compare L0/L1 coverage against the develop baseline.\n"
+            "Compare L0/L1/L2 coverage against the develop baseline.\n"
             "Exits 1 when coverage fails threshold or regresses from baseline."
         )
     )
@@ -199,8 +199,10 @@ def main() -> None:
                         help="Path to the L0 lcov filtered_coverage.info file.")
     parser.add_argument("--l1", required=False, metavar="PATH",
                         help="Path to the L1 lcov filtered_coverage.info file.")
+    parser.add_argument("--l2", required=False, metavar="PATH",
+                        help="Path to the L2 lcov filtered_coverage.info file.")
     parser.add_argument("--output-json", required=False, metavar="PATH",
-                        help="Write {L0, L1, commit, timestamp} JSON here for baseline update.")
+                        help="Write {L0, L1, L2, commit, timestamp} JSON here for baseline update.")
     parser.add_argument("--commit", required=False, default="",
                         help="Commit SHA to embed in --output-json.")
     parser.add_argument("--timestamp", required=False, default="",
@@ -220,13 +222,17 @@ def main() -> None:
 
     baseline_l0: Optional[float] = _coerce_pct(baseline.get("L0"))
     baseline_l1: Optional[float] = _coerce_pct(baseline.get("L1"))
+    baseline_l2: Optional[float] = _coerce_pct(baseline.get("L2"))
 
     l0_coverage = parse_lcov_coverage(args.l0) if args.l0 else None
     l1_coverage = parse_lcov_coverage(args.l1) if args.l1 else None
+    l2_coverage = parse_lcov_coverage(args.l2) if args.l2 else None
 
     # ------------------------------------------------------------------
     # Optional: write extracted numbers for baseline update.
-    # Skipped (with a warning) when either suite lacks valid coverage data.
+    # Skipped (with a warning) when either of L0/L1 lacks valid coverage
+    # data. L2 is included in the payload only when available, so callers
+    # that do not pass --l2 keep producing an L0/L1-only baseline.
     # ------------------------------------------------------------------
     if args.output_json:
         if l0_coverage is not None and l1_coverage is not None:
@@ -236,6 +242,8 @@ def main() -> None:
                 "commit": args.commit or "",
                 "timestamp": args.timestamp or "",
             }
+            if l2_coverage is not None:
+                payload["L2"] = l2_coverage
             try:
                 with open(args.output_json, "w", encoding="utf-8") as fh:
                     json.dump(payload, fh, indent=2)
@@ -245,14 +253,15 @@ def main() -> None:
         else:
             print(
                 f"  WARNING: --output-json skipped: coverage data incomplete "
-                f"(L0={l0_coverage}, L1={l1_coverage})",
+                f"(L0={l0_coverage}, L1={l1_coverage}, L2={l2_coverage})",
                 file=sys.stderr,
             )
 
     l0_ok, l0_result, l0_delta, l0_reason = _suite_analysis(l0_coverage, baseline_l0)
     l1_ok, l1_result, l1_delta, l1_reason = _suite_analysis(l1_coverage, baseline_l1)
+    l2_ok, l2_result, l2_delta, l2_reason = _suite_analysis(l2_coverage, baseline_l2)
 
-    all_ok       = l0_ok and l1_ok
+    all_ok       = l0_ok and l1_ok and l2_ok
     status_token = _colored("[PASS]", True) if all_ok else _colored("[WARN]", False)
 
     
@@ -273,6 +282,7 @@ def main() -> None:
     for name, current, base, result, delta_disp in [
         ("L0", l0_coverage, baseline_l0, l0_result, l0_delta),
         ("L1", l1_coverage, baseline_l1, l1_result, l1_delta),
+        ("L2", l2_coverage, baseline_l2, l2_result, l2_delta),
     ]:
         cur_str  = f"{current:.2f}%" if current is not None else "N/A"
         base_str = f"{base:.2f}%"    if base    is not None else "N/A"
@@ -281,14 +291,14 @@ def main() -> None:
     print(_SEP)
 
     # Summary + overall bar
-    warn_suites = [(n, r) for n, r in [("L0", l0_reason), ("L1", l1_reason)] if r]
+    warn_suites = [(n, r) for n, r in [("L0", l0_reason), ("L1", l1_reason), ("L2", l2_reason)] if r]
     summary = _build_summary(warn_suites)
     if summary:
         print(f"  {summary}")
 
-    # Notify when one or both suites had no coverage data (artifact absent).
+    # Notify when one or more suites had no coverage data (artifact absent).
     # Gate logic is unchanged — SKIP is treated as passing by design.
-    skipped = [n for n, cov in [("L0", l0_coverage), ("L1", l1_coverage)] if cov is None]
+    skipped = [n for n, cov in [("L0", l0_coverage), ("L1", l1_coverage), ("L2", l2_coverage)] if cov is None]
     if skipped:
         print(f"  NOTE: {_join_names(skipped)} coverage data absent \u2014 artifact missing or unreadable.")
 
