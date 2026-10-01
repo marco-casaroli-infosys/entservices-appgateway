@@ -69,7 +69,7 @@ namespace Plugin {
         ASSERT(mAppGateway == nullptr);
         ASSERT(mResponder == nullptr);
         ASSERT(mTelemetry == nullptr);
-        SYSLOG(Logging::Startup, (_T("AppGateway::Initialize: PID=%u"), getpid()));
+        SYSLOG(Logging::Startup, (_T("AppGateway::Initialize: PID=%d"), static_cast<int>(getpid())));
 
         LOGINFO("AppGateway::Initialize: PID=%u", getpid());
         // Measure bootstrap time
