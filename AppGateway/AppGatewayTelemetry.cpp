@@ -1588,9 +1588,13 @@ namespace Plugin {
 
         std::string formattedPayload = FormatTelemetryPayload(contextPayload);
 
-        if (payloadObj.HasLabel("queue_wait_ms") &&
+        const bool excessiveQueueWait = payloadObj.HasLabel("queue_wait_ms") &&
             payloadObj["queue_wait_ms"].Content() == Core::JSON::Variant::type::NUMBER &&
-            payloadObj["queue_wait_ms"].Number() > 250.0) {
+            payloadObj["queue_wait_ms"].Number() > 250.0;
+        const bool excessiveTotalTime = payloadObj.HasLabel("total_ms") &&
+            payloadObj["total_ms"].Content() == Core::JSON::Variant::type::NUMBER &&
+            payloadObj["total_ms"].Number() > 1000.0;
+        if (excessiveQueueWait || excessiveTotalTime) {
             LOGWARN("marker=%s, payload=%s", AGW_MARKER_JOB_TIMING, formattedPayload.c_str());
         }
 #if 0 // Not sending the message to server for now
