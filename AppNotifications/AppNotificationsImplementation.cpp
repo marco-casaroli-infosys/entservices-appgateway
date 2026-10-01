@@ -73,11 +73,6 @@ namespace WPEFramework
                     context.requestId, context.appId.c_str(), context.connectionId,
                     listen ? "true" : "false", module.c_str(), event.c_str(), context.version.c_str());
 
-            if (module.empty())
-            {
-                LOGERR("module parameter cannot be empty!");
-                return Core::ERROR_INVALID_PARAMETER;
-            }
             if (listen) {
                 if (!mSubMap.Exists(event)) {
                     // Thunder subscription
