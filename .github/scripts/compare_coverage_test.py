@@ -1043,6 +1043,22 @@ class TestL2CoverageIntegration(unittest.TestCase):
             data = json.load(fh)
         self.assertNotIn("L2", data)
 
+    # --- An explicitly requested missing L2 file must not replace its baseline ---
+
+    def test_output_json_not_written_when_requested_l2_is_missing(self):
+        bl = self._baseline({"L0": 75.0, "L1": 75.0, "L2": 75.0})
+        l0 = self._lcov("l0.info", 100, 80)
+        l1 = self._lcov("l1.info", 100, 82)
+        out = os.path.join(self.tmp, "new-baseline-missing-l2.json")
+        r = self._run(
+            "--baseline", bl,
+            "--l0", l0, "--l1", l1,
+            "--l2", os.path.join(self.tmp, "missing-l2.info"),
+            "--output-json", out,
+        )
+        self.assertFalse(os.path.isfile(out))
+        self.assertIn("coverage data incomplete", r.stderr)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -27,6 +27,8 @@ jobs:
   coverage-gate:
     name: Coverage Gate
     needs: [trigger-L0, trigger-L1, trigger-L2]
+    outputs:
+      coverage_ok: ${{ steps.compare.outputs.coverage_ok }}
     runs-on: ubuntu-latest
     # Transient runner/action failures must not block
     continue-on-error: true
@@ -79,13 +81,22 @@ jobs:
           path: ./l2-coverage
 
       - name: Compare coverage to baseline
-        continue-on-error: false
+        id: compare
         run: |
+          set +e
           python3 .github/scripts/compare_coverage.py \
             --baseline coverage-baseline.json \
             --l0 ./l0-coverage/filtered_coverage.info \
             --l1 ./l1-coverage/filtered_coverage.info \
-            --l2 ./l2-coverage/filtered_coverage.info
+            --l2 ./l2-coverage/filtered_coverage.info > coverage-report.txt 2>&1
+          compare_rc=$?
+          cat coverage-report.txt
+          if [ "$compare_rc" -eq 0 ] && grep -q 'OVERALL: .*\[PASS\]' coverage-report.txt; then
+            echo "coverage_ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "coverage_ok=false" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
 
   update-baseline:
     name: Update Coverage Baseline
@@ -98,7 +109,8 @@ jobs:
       needs.trigger-L0.result == 'success' &&
       needs.trigger-L1.result == 'success' &&
       needs.trigger-L2.result == 'success' &&
-      needs.coverage-gate.result == 'success'
+      needs.coverage-gate.result == 'success' &&
+      needs.coverage-gate.outputs.coverage_ok == 'true'
     needs: [trigger-L0, trigger-L1, trigger-L2, coverage-gate]
     runs-on: ubuntu-latest
     permissions:

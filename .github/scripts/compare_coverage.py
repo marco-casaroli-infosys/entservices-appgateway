@@ -227,6 +227,7 @@ def main() -> None:
     l0_coverage = parse_lcov_coverage(args.l0) if args.l0 else None
     l1_coverage = parse_lcov_coverage(args.l1) if args.l1 else None
     l2_coverage = parse_lcov_coverage(args.l2) if args.l2 else None
+    l2_requested = args.l2 is not None
 
     # ------------------------------------------------------------------
     # Optional: write extracted numbers for baseline update.
@@ -235,7 +236,12 @@ def main() -> None:
     # that do not pass --l2 keep producing an L0/L1-only baseline.
     # ------------------------------------------------------------------
     if args.output_json:
-        if l0_coverage is not None and l1_coverage is not None:
+        coverage_complete = (
+            l0_coverage is not None
+            and l1_coverage is not None
+            and (not l2_requested or l2_coverage is not None)
+        )
+        if coverage_complete:
             payload = {
                 "L0": l0_coverage,
                 "L1": l1_coverage,
