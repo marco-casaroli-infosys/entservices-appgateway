@@ -127,9 +127,10 @@ namespace Plugin {
             RespondJob(AppGatewayResponderImplementation *parent, 
             const uint32_t connectionId,
             const uint32_t requestId,
-            const std::string& payload
+            const std::string& payload,
+            const std::string& appId
             )
-                : mParent(*parent), mPayload(payload), mRequestId(requestId), mConnectionId(connectionId)
+                : mParent(*parent), mPayload(payload), mAppId(appId), mRequestId(requestId), mConnectionId(connectionId)
             {
                 mParent.AddRef();
             }
@@ -145,18 +146,21 @@ namespace Plugin {
 
         public:
             static Core::ProxyType<Core::IDispatch> Create(AppGatewayResponderImplementation *parent,
-                const uint32_t connectionId, const uint32_t requestId, const std::string& payload)
+                const uint32_t connectionId, const uint32_t requestId, const std::string& payload, const std::string& appId)
             {
-                return (Core::ProxyType<Core::IDispatch>(Core::ProxyType<RespondJob>::Create(parent, connectionId, requestId, payload)));
+                return (Core::ProxyType<Core::IDispatch>(Core::ProxyType<RespondJob>::Create(parent, connectionId, requestId, payload, appId)));
             }
             virtual void Dispatch()
             {
-                mParent.ReturnMessageInSocket(mConnectionId, mRequestId, mPayload);                
+                if (!mParent.mPausedAppsRegistry.IsPaused(mAppId)) {
+                    mParent.ReturnMessageInSocket(mConnectionId, mRequestId, mPayload);
+                }
             }
 
         private:
             AppGatewayResponderImplementation &mParent;
             const std::string mPayload;
+            const std::string mAppId;
             const uint32_t mRequestId;
             const uint32_t mConnectionId;
         };
@@ -167,9 +171,10 @@ namespace Plugin {
             EmitJob(AppGatewayResponderImplementation *parent, 
             const uint32_t connectionId,
             const std::string& designator,
-            const std::string& payload
+            const std::string& payload,
+            const std::string& appId
             )
-                : mParent(*parent), mPayload(payload), mDesignator(designator), mConnectionId(connectionId)
+                : mParent(*parent), mPayload(payload), mDesignator(designator), mAppId(appId), mConnectionId(connectionId)
             {
                 mParent.AddRef();
             }
@@ -185,19 +190,22 @@ namespace Plugin {
 
         public:
             static Core::ProxyType<Core::IDispatch> Create(AppGatewayResponderImplementation *parent,
-                const uint32_t connectionId, const std::string& designator, const std::string& payload)
+                const uint32_t connectionId, const std::string& designator, const std::string& payload, const std::string& appId)
             {
-                return (Core::ProxyType<Core::IDispatch>(Core::ProxyType<EmitJob>::Create(parent, connectionId, designator, payload)));
+                return (Core::ProxyType<Core::IDispatch>(Core::ProxyType<EmitJob>::Create(parent, connectionId, designator, payload, appId)));
             }
             virtual void Dispatch()
             {
-                mParent.mWsManager.DispatchNotificationToConnection(mConnectionId, mDesignator, mPayload);
+                if (!mParent.mPausedAppsRegistry.IsPaused(mAppId)) {
+                    mParent.mWsManager.DispatchNotificationToConnection(mConnectionId, mDesignator, mPayload);
+                }
             }
 
         private:
             AppGatewayResponderImplementation &mParent;
             const std::string mPayload;
             const std::string mDesignator;
+            const std::string mAppId;
             const uint32_t mConnectionId;
         };
 
@@ -232,7 +240,10 @@ namespace Plugin {
             }
             virtual void Dispatch()
             {
-                mParent.mWsManager.SendRequestToConnection(mConnectionId, mDesignator, mRequestId, mPayload);
+                string appId;
+                if (!mParent.mAppIdRegistry.Get(mConnectionId, appId) || !mParent.mPausedAppsRegistry.IsPaused(appId)) {
+                    mParent.mWsManager.SendRequestToConnection(mConnectionId, mDesignator, mRequestId, mPayload);
+                }
             }
 
         private:

@@ -40,8 +40,18 @@
 #include <cstdlib>
 #include <thread>
 #include <chrono>
+#include <list>
+#include <map>
+#include <mutex>
+#include <sstream>
+#include <unordered_map>
+#include <unordered_set>
 
+#define private public
+#define protected public
 #include "AppGatewayResponderImplementation.h"
+#undef protected
+#undef private
 #include "ServiceMock.h"
 
 #include <core/core.h>
@@ -386,5 +396,34 @@ uint32_t Test_Responder_SessionGuard_Via_Interface_Pointer()
 
     DrainJobs();
 
+    return tr.failures;
+}
+
+// PUBLIC_INTERFACE
+uint32_t Test_Responder_QueuedJobs_DropWhenSuspendedBeforeDispatch()
+{
+    TestResult tr;
+    WPEFramework::Core::Sink<WPEFramework::Plugin::AppGatewayResponderImplementation> responder;
+    const std::string appId = "com.example.queued";
+    const uint32_t connectionId = 71;
+
+    auto respondJob = WPEFramework::Plugin::AppGatewayResponderImplementation::RespondJob::Create(
+        &responder, connectionId, 21, "{}", appId);
+    auto emitJob = WPEFramework::Plugin::AppGatewayResponderImplementation::EmitJob::Create(
+        &responder, connectionId, "event.test", "{}", appId);
+    auto requestJob = WPEFramework::Plugin::AppGatewayResponderImplementation::RequestJob::Create(
+        &responder, connectionId, 22, "method.test", "{}");
+
+    responder.mAppIdRegistry.Add(connectionId, appId);
+    ExpectEqU32(tr, responder.SuspendTraffic(appId), ERROR_NONE,
+                "SuspendTraffic before queued-job dispatch returns ERROR_NONE");
+
+    respondJob->Dispatch();
+    emitJob->Dispatch();
+    requestJob->Dispatch();
+
+    ExpectTrue(tr, responder.mPausedAppsRegistry.IsPaused(appId),
+               "App remains suspended after queued jobs are dropped");
+    responder.ResumeTraffic(appId);
     return tr.failures;
 }

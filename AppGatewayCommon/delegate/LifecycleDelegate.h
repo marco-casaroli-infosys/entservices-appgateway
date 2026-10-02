@@ -1001,7 +1001,12 @@ class LifecycleDelegate : public BaseEventDelegate
             guardRef->ResumeTraffic(appId);
         }
 
-        Dispatch("Lifecycle2.onStateChanged", mLifecycleStateRegistry.GetLifecycle2StateJson(appInstanceId), appId);
+        const string lifecyclePayload = mLifecycleStateRegistry.GetLifecycle2StateJson(appInstanceId);
+        if (needsSuspend && IsNotificationRegistered("Lifecycle2.onStateChanged")) {
+            DispatchToAppNotifications("Lifecycle2.onStateChanged", lifecyclePayload, appId);
+        } else {
+            Dispatch("Lifecycle2.onStateChanged", lifecyclePayload, appId);
+        }
 
         // Suspend after dispatch (best-effort) when entering HIBERNATED.
         if (needsSuspend && guardRef != nullptr) {

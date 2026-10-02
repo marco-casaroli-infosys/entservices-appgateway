@@ -941,6 +941,28 @@ TEST(AppGatewayPluginTest, AppGatewayResponderImplementation_Emit_CompliantAndNo
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 }
 
+TEST(AppGatewayPluginTest, AppGatewayResponderImplementation_QueuedJobsDropWhenSuspendedBeforeDispatch)
+{
+    auto& responder = StableAsyncResponder();
+    const std::string appId = "queued.app";
+    const uint32_t connectionId = 5000;
+    responder.mAppIdRegistry.Add(connectionId, appId);
+
+    auto respondJob = AppGatewayResponderImplementation::RespondJob::Create(
+        &responder, connectionId, 10, "{}", appId);
+    auto emitJob = AppGatewayResponderImplementation::EmitJob::Create(
+        &responder, connectionId, "event.test", "{}", appId);
+    auto requestJob = AppGatewayResponderImplementation::RequestJob::Create(
+        &responder, connectionId, 11, "method.test", "{}");
+
+    ASSERT_EQ(Core::ERROR_NONE, responder.SuspendTraffic(appId));
+    respondJob->Dispatch();
+    emitJob->Dispatch();
+    requestJob->Dispatch();
+    EXPECT_TRUE(responder.mPausedAppsRegistry.IsPaused(appId));
+    EXPECT_EQ(Core::ERROR_NONE, responder.ResumeTraffic(appId));
+}
+
 TEST(AppGatewayPluginTest, AppGatewayResponderImplementation_DispatchWsMsg_WithoutAppId_IncrementsFailed)
 {
     TestAppGatewayResponderImplementation responder;

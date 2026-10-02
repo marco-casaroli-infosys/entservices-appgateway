@@ -1394,16 +1394,14 @@ TEST_F(LifecycleDelegateTest, AGC_L1_212_ActiveToHibernated_SuspendTrafficAfterD
     EXPECT_CALL(guardMock, Release()).Times(::testing::AnyNumber()).WillRepeatedly(Return(Core::ERROR_NONE));
     EXPECT_CALL(guardMock, QueryInterface(::testing::_)).Times(::testing::AnyNumber()).WillRepeatedly(Return(nullptr));
 
-    // Ordering: Dispatch is invoked first in HandleLifecycleUpdate, but it submits
-    // an async worker-pool job, so Emit fires on a worker thread after SuspendTraffic
-    // has already returned in the calling thread.  Assert both happen independently;
-    // do not use InSequence here — the async delivery makes the observed order
-    // Dispatch-call → SuspendTraffic → (worker) Emit, not Emit → SuspendTraffic.
-    EXPECT_CALL(*stateEmitter, Emit(::testing::HasSubstr("Lifecycle2.onStateChanged"), _, _))
-        .Times(::testing::AtLeast(1));
-    EXPECT_CALL(guardMock, SuspendTraffic(std::string("test.app")))
-        .Times(1)
-        .WillOnce(Return(Core::ERROR_NONE));
+    {
+        ::testing::InSequence seq;
+        EXPECT_CALL(*stateEmitter, Emit(::testing::HasSubstr("Lifecycle2.onStateChanged"), _, _))
+            .Times(1);
+        EXPECT_CALL(guardMock, SuspendTraffic(std::string("test.app")))
+            .Times(1)
+            .WillOnce(Return(Core::ERROR_NONE));
+    }
     // ResumeTraffic must NOT be called for ACTIVE → HIBERNATED.
     EXPECT_CALL(guardMock, ResumeTraffic(::testing::_)).Times(0);
 

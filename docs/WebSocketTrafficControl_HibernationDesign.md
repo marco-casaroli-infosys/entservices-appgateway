@@ -112,7 +112,7 @@ A private inner class inside `AppGatewayResponderImplementation` that maintains 
 `AppGatewayResponderImplementation` now also inherits `IAppGatewayAppSessionGuard`. Drop checks against `PausedAppsRegistry` are inserted at the four traffic entry points:
 
 - **`DispatchWsMsg`** (inbound): if the sender's appId is paused, the message is silently discarded before reaching the resolver.
-- **`Respond`, `Emit`, `Request`** (outbound): if the target appId is paused, the operation returns `Core::ERROR_NONE` immediately without submitting a worker-pool job.
+- **`Respond`, `Emit`, `Request`** (outbound): if the target appId is paused, the operation returns `Core::ERROR_NONE` immediately without submitting a worker-pool job. Jobs accepted immediately before suspension re-check the paused state when they execute and are dropped if the application has since hibernated.
 
 `SuspendTraffic` and `ResumeTraffic` simply delegate to `PausedAppsRegistry::Pause` and `Resume` respectively.
 
@@ -123,7 +123,7 @@ A private inner class inside `AppGatewayResponderImplementation` that maintains 
 `LifecycleDelegate` receives `OnAppLifecycleStateChanged` from `ILifecycleManagerState`. It holds an `IAppGatewayAppSessionGuard*` member (`mSessionGuard`) and drives pause/resume around the `Lifecycle2.onStateChanged` dispatch with the following ordering rules:
 
 - `ResumeTraffic` is called **before** `Dispatch("Lifecycle2.onStateChanged", ...)` when leaving hibernation or starting a new session. This ensures the state-change event itself is not dropped by a still-paused responder.
-- `SuspendTraffic` is called **after** `Dispatch(...)` when entering hibernation. The state-change event is delivered while the channel is still open.
+- When entering hibernation, the state-change event is delivered synchronously before `SuspendTraffic` is called. This guarantees the event reaches the responder while the channel is still open.
 
 `SetSessionGuard(IAppGatewayAppSessionGuard*)` is the thread-safe setter called by `AppGatewayCommon` during `Initialize` (to set) and `Deinitialize` (to clear with `nullptr`).
 
@@ -187,7 +187,7 @@ App message → AppGatewayResponderImplementation::DispatchWsMsg()
 PausedAppsRegistry::IsPaused("TestApp") → true
         │
         ▼
-Message DROPPED 
+Message DROPPED
 
 
 ─── Outbound path (AppGatewayResponder → app) ────────────────
@@ -200,7 +200,7 @@ AppGatewayResponderImplementation::Respond()
 PausedAppsRegistry::IsPaused("TestApp") → true
         │
         ▼
-Message DROPPED 
+Message DROPPED
 ```
 
 ### 6.2 App resumes from HIBERNATED — traffic restored
