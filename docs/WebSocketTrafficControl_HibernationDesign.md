@@ -123,7 +123,7 @@ A private inner class inside `AppGatewayResponderImplementation` that maintains 
 `LifecycleDelegate` receives `OnAppLifecycleStateChanged` from `ILifecycleManagerState`. It holds an `IAppGatewayAppSessionGuard*` member (`mSessionGuard`) and drives pause/resume around the `Lifecycle2.onStateChanged` dispatch with the following ordering rules:
 
 - `ResumeTraffic` is called **before** `Dispatch("Lifecycle2.onStateChanged", ...)` when leaving hibernation or starting a new session. This ensures the state-change event itself is not dropped by a still-paused responder.
-- When entering hibernation, the state-change event is delivered synchronously before `SuspendTraffic` is called. This guarantees the event reaches the responder while the channel is still open.
+- `SuspendTraffic` is called **after** `Dispatch(...)` when entering hibernation. The state-change event is delivered while the channel is still open.
 
 `SetSessionGuard(IAppGatewayAppSessionGuard*)` is the thread-safe setter called by `AppGatewayCommon` during `Initialize` (to set) and `Deinitialize` (to clear with `nullptr`).
 
