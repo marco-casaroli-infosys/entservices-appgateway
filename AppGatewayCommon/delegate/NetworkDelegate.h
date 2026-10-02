@@ -31,6 +31,9 @@
 #include <set>
 #include "ObjectUtils.h"
 #include "UtilsFirebolt.h"
+#include <atomic>
+#include <condition_variable>
+#include <functional>
 #include <mutex>
 
 using namespace WPEFramework;
@@ -53,22 +56,32 @@ public:
 
     ~NetworkDelegate()
     {
-        Core::SafeSyncType<Core::CriticalSection> lock(mNetworkManagerLock);
-        if (nullptr != mNetworkManager)
+        // Unregister first so no new jobs get queued, then wait for any already
+        // running, then release. Wrong order leaves a window for a use-after-free.
         {
+            Core::SafeSyncType<Core::CriticalSection> lock(mNetworkManagerLock);
+            if (nullptr != mNetworkManager)
             {
-                std::lock_guard<std::mutex> lock(mRegistrationMutex);
+                std::lock_guard<std::mutex> regLock(mRegistrationMutex);
                 if (mNotificationHandler.GetRegistered())
                 {
                     mNetworkManager->Unregister(&mNotificationHandler);
                     mNotificationHandler.SetRegistered(false);
                 }
             }
+        }
+
+        {
+            std::unique_lock<std::mutex> lk(mJobDrainMutex);
+            mJobDrainCv.wait(lk, [this] { return mActiveWorkerJobs.load(std::memory_order_acquire) == 0; });
+        }
+
+        Core::SafeSyncType<Core::CriticalSection> lock(mNetworkManagerLock);
+        if (nullptr != mNetworkManager)
+        {
             mNetworkManager->Release();
             mNetworkManager = nullptr;
         }
-
-        
     }
 
     bool HandleSubscription(Exchange::IAppNotificationHandler::IEmitter *cb, const string &event, const bool listen)
@@ -136,6 +149,8 @@ public:
         return mNetworkManager;
     }
 
+    // "Connected" means at least one interface is physically linked -- not internet
+    // reachability, and not which interface is primary (same definition as device.network below).
     Core::hresult GetNetworkConnected(string &result) {
         result.clear();
 
@@ -146,34 +161,23 @@ public:
             return Core::ERROR_UNAVAILABLE;
         }
 
-        string interface;
-        Core::hresult rc = networkManager->GetPrimaryInterface(interface);
-        if (rc == Core::ERROR_NONE) {
-            // Transform the response: return_or_error(.result, "couldn't get network connected status")
-            // Return the boolean result directly as per transform specification
-            result = interface.empty() ? "false" : "true";
-            return Core::ERROR_NONE;
-        } else {
-            LOGERR("Failed to get primary interface on NetworkManager, error: %u", rc);
+        bool connected = false;
+        if (IsAnyInterfaceConnected(networkManager, connected) != Core::ERROR_NONE) {
+            LOGERR("Failed to get available interfaces on NetworkManager");
             ErrorUtils::CustomInternal("Failed to get NetworkInfo", result);
             return Core::ERROR_GENERAL;
         }
+
+        result = connected ? "true" : "false";
+        return Core::ERROR_NONE;
     }
 
     // PUBLIC_INTERFACE
     Core::hresult GetInternetConnectionStatus(std::string &result)
     {
-        /**
-         * Retrieve the first connected interface from GetAvailableInterfaces
-         * Transform: Map connected interfaces and return type in lowercase with state
-         * Transform logic: .result.interfaces| .[] | select(."connected"==true) |
-         *                  {type: .interface, state: map_connected(.connected)} |
-         *                  .type |= ascii_downcase | [., inputs][0]
-         */
         LOGINFO("GetInternetConnectionStatus via NetworkManager");
         result.clear();
 
-        // Get NetworkManager interface
         Exchange::INetworkManager *networkManager = GetNetworkManagerInterface();
         if (networkManager == nullptr)
         {
@@ -182,82 +186,175 @@ public:
             return Core::ERROR_UNAVAILABLE;
         }
 
-        // Get available interfaces
-        Exchange::INetworkManager::IInterfaceDetailsIterator *interfaces = nullptr;
-        uint32_t rc = networkManager->GetAvailableInterfaces(interfaces);
-
-        if (rc != Core::ERROR_NONE)
+        Exchange::INetworkManager::InterfaceDetails iface{};
+        bool found = false;
+        if (FindConnectedInterface(networkManager, iface, found) != Core::ERROR_NONE)
         {
-            LOGERR("GetAvailableInterfaces call failed with error: %u", rc);
+            LOGERR("GetAvailableInterfaces call failed");
             result = "{\"error\":\"Failed to get available interfaces\"}";
             return Core::ERROR_GENERAL;
         }
 
-        if (interfaces == nullptr)
+        if (!found)
         {
-            LOGERR("GetAvailableInterfaces returned null iterator");
             result = "{}";
+            LOGINFO("No connected interface found");
             return Core::ERROR_NONE;
         }
 
-        // Iterate through interfaces and find the first connected one
-        Exchange::INetworkManager::InterfaceDetails iface{};
-        bool foundConnected = false;
-
-        while (interfaces->Next(iface))
-        {
-            if (iface.connected)
-            {
-                // Get interface type string - map enum to string manually
-                std::string interfaceType;
-                switch (iface.type) {
-                    case Exchange::INetworkManager::INTERFACE_TYPE_ETHERNET:
-                        interfaceType = "ethernet";
-                        break;
-                    case Exchange::INetworkManager::INTERFACE_TYPE_WIFI:
-                        interfaceType = "wifi";
-                        break;
-                    default:
-                        interfaceType = "unknown";
-                        break;
-                }
-
-                // Build the result JSON: {"type": "<type>", "state": "connected"}
-                std::ostringstream jsonStream;
-                jsonStream << "{\"type\":\"" << interfaceType
-                           << "\",\"state\":\"connected\"}";
-                result = jsonStream.str();
-
-                LOGINFO("Found connected interface: %s", result.c_str());
-                foundConnected = true;
-                break;
-            }
+        std::string interfaceType;
+        switch (iface.type) {
+            case Exchange::INetworkManager::INTERFACE_TYPE_ETHERNET: interfaceType = "ethernet"; break;
+            case Exchange::INetworkManager::INTERFACE_TYPE_WIFI:     interfaceType = "wifi";     break;
+            default:                                                 interfaceType = "unknown";  break;
         }
 
-        // Release the iterator
-        interfaces->Release();
-
-        if (!foundConnected)
-        {
-            // No connected interface found
-            result = "{}";
-            LOGINFO("No connected interface found");
-        }
-
+        std::ostringstream jsonStream;
+        jsonStream << "{\"type\":\"" << interfaceType << "\",\"state\":\"connected\"}";
+        result = jsonStream.str();
+        LOGINFO("Found connected interface: %s", result.c_str());
         return Core::ERROR_NONE;
     }
 
 private:
+    // Finds the first interface GetAvailableInterfaces() reports as connected.
+    // `found` is false (not an error) if none are connected or the list is empty.
+    Core::hresult FindConnectedInterface(Exchange::INetworkManager *networkManager,
+                                         Exchange::INetworkManager::InterfaceDetails &iface, bool &found)
+    {
+        found = false;
+
+        Exchange::INetworkManager::IInterfaceDetailsIterator *interfaces = nullptr;
+        Core::hresult rc = networkManager->GetAvailableInterfaces(interfaces);
+        if (rc != Core::ERROR_NONE) {
+            return rc;
+        }
+        if (interfaces == nullptr) {
+            return Core::ERROR_NONE;
+        }
+
+        while (interfaces->Next(iface)) {
+            if (iface.connected) {
+                found = true;
+                break;
+            }
+        }
+        interfaces->Release();
+        return Core::ERROR_NONE;
+    }
+
+    Core::hresult IsAnyInterfaceConnected(Exchange::INetworkManager *networkManager, bool &connected)
+    {
+        Exchange::INetworkManager::InterfaceDetails iface{};
+        return FindConnectedInterface(networkManager, iface, connected);
+    }
+
+    // Skips re-dispatching the same value, e.g. if the link flaps without changing
+    // the overall "any interface connected" result.
+    void DispatchConnectedChanged(bool connected)
+    {
+        {
+            std::lock_guard<std::mutex> lock(mLastConnectedMutex);
+            if (mLastConnectedKnown && mLastConnected == connected) {
+                return;
+            }
+            mLastConnectedKnown = true;
+            mLastConnected = connected;
+        }
+        Dispatch("Network.onConnectedChanged", ObjectUtils::CreateBooleanJsonString("value", connected));
+    }
+
+    // Runs work on a worker pool thread. onInterfaceStateChange uses this to get
+    // off the NetworkManager notification thread before calling back into
+    // NetworkManager, same fix as RDKEMW-24422 (see SystemDelegate.h).
+    class EXTERNAL WorkerPoolTask : public Core::IDispatch
+    {
+    public:
+        explicit WorkerPoolTask(std::function<void()> work)
+            : _work(std::move(work))
+        {
+        }
+        WorkerPoolTask() = delete;
+        WorkerPoolTask(const WorkerPoolTask&) = delete;
+        WorkerPoolTask& operator=(const WorkerPoolTask&) = delete;
+        ~WorkerPoolTask() override = default;
+
+        void Dispatch() override
+        {
+            _work();
+        }
+
+    private:
+        std::function<void()> _work;
+    };
+
+    static void PostToWorkerPool(std::function<void()> work)
+    {
+        Core::IWorkerPool::Instance().Submit(
+            Core::ProxyType<Core::IDispatch>(Core::ProxyType<WorkerPoolTask>::Create(std::move(work))));
+    }
+
+    // Decrements mActiveWorkerJobs on scope exit and wakes the drain wait. Caller
+    // must increment before posting the job.
+    class JobDrainGuard
+    {
+    public:
+        explicit JobDrainGuard(NetworkDelegate &parent) : mParent(parent) {}
+        JobDrainGuard(const JobDrainGuard&) = delete;
+        JobDrainGuard& operator=(const JobDrainGuard&) = delete;
+        ~JobDrainGuard()
+        {
+            if (1 == mParent.mActiveWorkerJobs.fetch_sub(1, std::memory_order_acq_rel)) {
+                std::lock_guard<std::mutex> lk(mParent.mJobDrainMutex);
+                mParent.mJobDrainCv.notify_all();
+            }
+        }
+
+    private:
+        NetworkDelegate &mParent;
+    };
+
     class NetworkNotificationHandler : public Exchange::INetworkManager::INotification
     {
     public:
         NetworkNotificationHandler(NetworkDelegate &parent) : mParent(parent), registered(false) {}
         ~NetworkNotificationHandler() {}
 
-        void onActiveInterfaceChange(const string prevActiveInterface, const string currentActiveInterface)
+        // onActiveInterfaceChange isn't overridden here. Which interface is primary
+        // doesn't affect Network.connected, so it falls back to the no-op default.
+
+        // Recomputes "any interface connected" instead of trusting just this one
+        // interface's new state, e.g. eth0 going down shouldn't report false if
+        // wlan0 is still up.
+        void onInterfaceStateChange(const Exchange::INetworkManager::InterfaceState state, const string interface) override
         {
-            LOGDBG("onActiveInterfaceChange: prev=%s, current=%s", prevActiveInterface.c_str(), currentActiveInterface.c_str());
-            mParent.Dispatch("Network.onConnectedChanged", ObjectUtils::CreateBooleanJsonString("value", currentActiveInterface.empty() ? false : true) );
+            LOGDBG("onInterfaceStateChange: state=%d, interface=%s", state, interface.c_str());
+
+            if (state != Exchange::INetworkManager::INTERFACE_LINK_UP &&
+                state != Exchange::INetworkManager::INTERFACE_LINK_DOWN) {
+                return;
+            }
+
+            // Query and dispatch on a worker-pool thread, not this notification thread.
+            // Locked so two rapid events can't interleave and dispatch a stale value.
+            // Job is counted so ~NetworkDelegate can wait for it before destructing.
+            mParent.mActiveWorkerJobs.fetch_add(1, std::memory_order_acq_rel);
+            mParent.PostToWorkerPool([this]() {
+                JobDrainGuard drainGuard(mParent);
+                std::lock_guard<std::mutex> lock(mParent.mQueryDispatchMutex);
+
+                Exchange::INetworkManager *networkManager = mParent.GetNetworkManagerInterface();
+                if (networkManager == nullptr) {
+                    return;
+                }
+
+                bool connected = false;
+                if (mParent.IsAnyInterfaceConnected(networkManager, connected) != Core::ERROR_NONE) {
+                    return;
+                }
+
+                mParent.DispatchConnectedChanged(connected);
+            });
         }
 
         void onInternetStatusChange(const Exchange::INetworkManager::InternetStatus prevState, const Exchange::INetworkManager::InternetStatus currState, const string interface)
@@ -309,6 +406,15 @@ private:
     PluginHost::IShell *mShell;
     Core::Sink<NetworkNotificationHandler> mNotificationHandler;
     mutable std::mutex mRegistrationMutex;
+    bool mLastConnectedKnown = false;
+    bool mLastConnected = false;
+    std::mutex mLastConnectedMutex;
+    // Serializes query-and-dispatch across worker-pool jobs.
+    std::mutex mQueryDispatchMutex;
+    // In-flight worker-pool job count. Destructor waits for this to hit 0.
+    std::atomic<int> mActiveWorkerJobs{0};
+    std::mutex mJobDrainMutex;
+    std::condition_variable mJobDrainCv;
 };
 
 #endif // __NETWORKDELEGATE_H__
