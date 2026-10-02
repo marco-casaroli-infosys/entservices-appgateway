@@ -37,7 +37,7 @@ public:
     MOCK_METHOD(WPEFramework::Core::hresult, SuspendTraffic, (const std::string& appId), (override));
     MOCK_METHOD(WPEFramework::Core::hresult, ResumeTraffic,  (const std::string& appId), (override));
 
-    MOCK_METHOD(void,     AddRef,         (), (const, override));
+    MOCK_METHOD(uint32_t, AddRef,         (), (const, override));
     MOCK_METHOD(uint32_t, Release,        (), (const, override));
     MOCK_METHOD(void*,    QueryInterface, (const uint32_t interfaceNumber), (override));
 };
@@ -50,9 +50,9 @@ public:
     AppSessionGuardSpy() : _refCount(1) {}
     ~AppSessionGuardSpy() override = default;
 
-    void AddRef() const override
+    uint32_t AddRef() const override
     {
-        _refCount.fetch_add(1, std::memory_order_relaxed);
+        return _refCount.fetch_add(1, std::memory_order_relaxed) + 1;
     }
 
     uint32_t Release() const override

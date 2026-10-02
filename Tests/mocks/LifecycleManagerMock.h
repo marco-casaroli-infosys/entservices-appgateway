@@ -40,7 +40,7 @@ public:
     MOCK_METHOD(WPEFramework::Core::hresult, KillApp,(const string& appInstanceId , string& errorReason , bool& success) , (override));
     MOCK_METHOD(WPEFramework::Core::hresult, SendIntentToActiveApp,(const string& appInstanceId , const string& intent , string& errorReason , bool& success), (override)) ;
 
-    MOCK_METHOD(void, AddRef, (), (const, override));
+    MOCK_METHOD(uint32_t, AddRef, (), (const, override));
     MOCK_METHOD(uint32_t, Release, (), (const, override));
     MOCK_METHOD(void*, QueryInterface, (const uint32_t interfaceNummer), (override));
 
@@ -64,7 +64,7 @@ public:
     MOCK_METHOD(WPEFramework::Core::hresult, StateChangeComplete, (const string& appId, const uint32_t stateChangedId, const bool success ), (override));
     MOCK_METHOD(WPEFramework::Core::hresult, CloseApp, (const string& appId, const AppCloseReason closeReason ), (override));
 
-    MOCK_METHOD(void, AddRef, (), (const, override));
+    MOCK_METHOD(uint32_t, AddRef, (), (const, override));
     MOCK_METHOD(uint32_t, Release, (), (const, override));
     MOCK_METHOD(void*, QueryInterface, (const uint32_t interfaceNummer), (override));
 };

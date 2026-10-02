@@ -103,7 +103,7 @@ uint32_t Test_HandleRequest_CaseInsensitiveMethod()
 // HandleAppGatewayRequest for lifecycle.ready via the handler map.
 // In L0, InvokeLifecycleDelegate reaches LifecycleDelegate::LifecycleReady because
 // both mDelegate and lifecycleDelegate are non-null.  LifecycleReady sets result="null"
-// and returns ERROR_NONE when mLifecycleManagerState is nullptr (no /opt/ai2managers).
+// and returns ERROR_NONE when mLifecycleManagerState is nullptr (no /etc/rdkappmanagers).
 uint32_t Test_HandleRequest_LifecycleReady()
 {
     TestResult tr;
@@ -184,6 +184,13 @@ uint32_t Test_HandleRequest_DeviceHdr()
 uint32_t Test_HandleRequest_DeviceAudio()
 {
     return DelegateGetterTest("device.audio");
+}
+
+// TEST_ID: AGC_L0_026A
+// Handler-map getter: device.dolbyatmosexperienceavailable
+uint32_t Test_HandleRequest_DeviceDolbyAtmosExperience()
+{
+    return DelegateGetterTest("device.dolbyatmosexperienceavailable");
 }
 
 // TEST_ID: AGC_L0_027
@@ -431,7 +438,7 @@ uint32_t Test_HandleRequest_DispatchIntent()
 
 // TEST_ID: AGC_L0_053
 // commoninternal.getlastintent returns ERROR_NONE with JSON containing intentId and intent fields
-// When no intent is stored, intentId=0 and intent is empty string.
+// When no intent is stored, intentId=0 and intent is an empty JSON object ({}).
 uint32_t Test_HandleRequest_GetLastIntent()
 {
     TestResult tr;
@@ -444,8 +451,11 @@ uint32_t Test_HandleRequest_GetLastIntent()
     // Result must be a JSON object with intentId and intent fields
     const bool hasIntentId = result.find("\"intentId\":") != std::string::npos;
     const bool hasIntent   = result.find("\"intent\":")   != std::string::npos;
+    // When no intent is stored, intent must be serialized as an empty JSON object
+    const bool hasEmptyObject = result.find("\"intent\":{}") != std::string::npos;
     if (!hasIntentId) tr.failures++;
     if (!hasIntent) tr.failures++;
+    if (!hasEmptyObject) tr.failures++;
     return tr.failures;
 }
 
@@ -478,7 +488,7 @@ uint32_t Test_HandleRequest_ActionsStart_EmptyPayload()
 }
 
 // TEST_ID: AGC_L0_059
-// actions.intent in L0 → no stored intent → returns JSON with intentId=0
+// actions.intent in L0 → no stored intent → returns JSON with intentId=0 and intent={}
 uint32_t Test_HandleRequest_ActionsIntent_EmptyRegistry()
 {
     TestResult tr;
@@ -488,10 +498,95 @@ uint32_t Test_HandleRequest_ActionsIntent_EmptyRegistry()
     Exchange::GatewayContext ctx = DefaultContext();
     const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "actions.intent", "{}", result);
     ExpectEqU32(tr, rc, ERROR_NONE, "actions.intent returns ERROR_NONE");
-    const bool hasIntentId = result.find("\"intentId\":") != std::string::npos;
-    const bool hasIntent   = result.find("\"intent\":")   != std::string::npos;
+    const bool hasIntentId    = result.find("\"intentId\":") != std::string::npos;
+    const bool hasIntent      = result.find("\"intent\":")   != std::string::npos;
+    // When no intent is stored, intent must be serialized as an empty JSON object
+    const bool hasEmptyObject = result.find("\"intent\":{}") != std::string::npos;
     if (!hasIntentId) tr.failures++;
     if (!hasIntent) tr.failures++;
+    if (!hasEmptyObject) tr.failures++;
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_060
+// commoninternal.setintent with non-empty intent stores it and subsequent getlastintent returns it
+uint32_t Test_HandleRequest_SetIntent_StoresAndGet()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    // Set a non-empty intent
+    const uint32_t rc1 = handler->HandleAppGatewayRequest(ctx, "commoninternal.setintent", R"({"action":"play","content":"video123"})", result);
+    ExpectEqU32(tr, rc1, ERROR_NONE, "commoninternal.setintent returns ERROR_NONE");
+    ExpectEqStr(tr, result, "null", "commoninternal.setintent result is null");
+
+    // Verify getlastintent returns the stored intent
+    const uint32_t rc2 = handler->HandleAppGatewayRequest(ctx, "commoninternal.getlastintent", "{}", result);
+    ExpectEqU32(tr, rc2, ERROR_NONE, "commoninternal.getlastintent returns ERROR_NONE");
+    const bool hasIntent = result.find("\"action\"") != std::string::npos;
+    const bool hasContent = result.find("video123") != std::string::npos;
+    ExpectTrue(tr, hasIntent, "getlastintent returns stored intent with action field");
+    ExpectTrue(tr, hasContent, "getlastintent returns stored intent with content value");
+
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_061
+// commoninternal.setintent with empty payload no-ops
+uint32_t Test_HandleRequest_SetIntent_EmptyPayload()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    // First set a non-empty intent
+    handler->HandleAppGatewayRequest(ctx, "commoninternal.setintent", R"({"initial":"intent"})", result);
+
+    // Call setintent with empty payload - should no-op and not overwrite
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "commoninternal.setintent", "", result);
+    ExpectEqU32(tr, rc, ERROR_NONE, "commoninternal.setintent with empty payload returns ERROR_NONE");
+    ExpectEqStr(tr, result, "null", "commoninternal.setintent result is null");
+
+    // Verify the original intent is still there
+    const uint32_t rc2 = handler->HandleAppGatewayRequest(ctx, "commoninternal.getlastintent", "{}", result);
+    ExpectEqU32(tr, rc2, ERROR_NONE, "commoninternal.getlastintent returns ERROR_NONE");
+    const bool hasOriginal = result.find("initial") != std::string::npos;
+    ExpectTrue(tr, hasOriginal, "Empty payload did not overwrite existing intent");
+
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_062
+// commoninternal.setintent with "null" string payload no-ops
+uint32_t Test_HandleRequest_SetIntent_NullStringPayload()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    // First set a non-empty intent
+    handler->HandleAppGatewayRequest(ctx, "commoninternal.setintent", R"({"original":"intent"})", result);
+
+    // Call setintent with literal "null" string - should no-op and not overwrite
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "commoninternal.setintent", "null", result);
+    ExpectEqU32(tr, rc, ERROR_NONE, "commoninternal.setintent with 'null' payload returns ERROR_NONE");
+    ExpectEqStr(tr, result, "null", "commoninternal.setintent result is null");
+
+    // Verify the original intent is still there
+    const uint32_t rc2 = handler->HandleAppGatewayRequest(ctx, "commoninternal.getlastintent", "{}", result);
+    ExpectEqU32(tr, rc2, ERROR_NONE, "commoninternal.getlastintent returns ERROR_NONE");
+    const bool hasOriginal = result.find("original") != std::string::npos;
+    const bool hasNullString = result.find("\"null\"") != std::string::npos; // Should NOT have literal "null" as intent
+    ExpectTrue(tr, hasOriginal, "'null' payload did not overwrite existing intent");
+    ExpectTrue(tr, !hasNullString, "Intent is not the literal string 'null'");
+
     return tr.failures;
 }
 
@@ -569,3 +664,343 @@ uint32_t Test_HandleRequest_PresentationFocused_CaseInsensitive()
     return tr.failures;
 }
 
+// ============================================================================
+// Tests AGC_L0_101 – AGC_L0_103 — ParentalControl handler-map getters
+// ============================================================================
+
+// TEST_ID: AGC_L0_101
+// Handler-map getter: parentalcontrol.pincontrol is routed to AppGatewayCommon.
+// In L0 the UserSettings COM interface is unavailable, so GetPinControl returns
+// ERROR_UNAVAILABLE.  DelegateGetterTest accepts ERROR_NONE/UNAVAILABLE/GENERAL.
+uint32_t Test_HandleRequest_ParentalControl_PinControl()
+{
+    return DelegateGetterTest("parentalcontrol.pincontrol");
+}
+
+// TEST_ID: AGC_L0_102
+// Handler-map getter: parentalcontrol.blocknotratedcontent is routed.
+uint32_t Test_HandleRequest_ParentalControl_BlockNotRatedContent()
+{
+    return DelegateGetterTest("parentalcontrol.blocknotratedcontent");
+}
+
+// TEST_ID: AGC_L0_103
+// Handler-map getter: parentalcontrol.viewingrestrictions is routed.
+uint32_t Test_HandleRequest_ParentalControl_ViewingRestrictions()
+{
+    return DelegateGetterTest("parentalcontrol.viewingrestrictions");
+}
+
+// TEST_ID: AGC_L0_104A
+// VideoOutput.resolution returns the safe default when Thunder is unavailable.
+uint32_t Test_HandleRequest_VideoOutputResolution_NoDisplay()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "videooutput.resolution", "{}", result);
+    ExpectEqU32(tr, rc, ERROR_NONE, "videooutput.resolution returns ERROR_NONE when Thunder is unavailable");
+    ExpectEqStr(tr, result, "{\"width\":0,\"height\":0}", "videooutput.resolution returns zeroed dimensions");
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_104B
+// VideoOutput.hdcp returns the safe default when Thunder is unavailable.
+uint32_t Test_HandleRequest_VideoOutputHdcp_NoDisplay()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "videooutput.hdcp", "{}", result);
+    ExpectEqU32(tr, rc, ERROR_NONE, "videooutput.hdcp returns ERROR_NONE when Thunder is unavailable");
+    ExpectEqStr(tr, result, "\"none\"", "videooutput.hdcp returns none when Thunder is unavailable");
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_104E
+// VideoOutput.colorFormat returns the safe default when Thunder is unavailable.
+uint32_t Test_HandleRequest_VideoOutputColorFormat_NoDisplay()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "videooutput.colorformat", "{}", result);
+    ExpectEqU32(tr, rc, ERROR_NONE, "videooutput.colorformat returns ERROR_NONE when Thunder is unavailable");
+    ExpectEqStr(tr, result, "\"none\"", "videooutput.colorformat returns \"none\" when Thunder is unavailable");
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_104F
+// VideoOutput.quantizationRange returns the safe default when Thunder is unavailable.
+uint32_t Test_HandleRequest_VideoOutputQuantizationRange_NoDisplay()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "videooutput.quantizationrange", "{}", result);
+    ExpectEqU32(tr, rc, ERROR_NONE, "videooutput.quantizationrange returns ERROR_NONE when Thunder is unavailable");
+    ExpectEqStr(tr, result, "\"none\"", "videooutput.quantizationrange returns \"none\" when Thunder is unavailable");
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_104C
+// VideoOutput.cecState returns the safe default when Thunder is unavailable.
+uint32_t Test_HandleRequest_VideoOutputCecActiveState_NoDisplay()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "videooutput.cecstate", "{}", result);
+    ExpectEqU32(tr, rc, ERROR_NONE, "videooutput.cecstate returns ERROR_NONE when Thunder is unavailable");
+    ExpectEqStr(tr, result, "\"unsupported\"", "videooutput.cecstate returns unsupported when Thunder is unavailable");
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_104D
+// VideoOutput.port returns the safe default when Thunder is unavailable.
+uint32_t Test_HandleRequest_VideoOutputPort_NoDisplay()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "videooutput.port", "{}", result);
+    ExpectEqU32(tr, rc, ERROR_NONE, "videooutput.port returns ERROR_NONE when Thunder is unavailable");
+    ExpectEqStr(tr, result, "\"none\"", "videooutput.port returns none when Thunder is unavailable");
+    return tr.failures;
+}
+
+// ─── VideoOutput routing tests ────────────────────────────────────────
+
+// TEST_ID: AGC_L0_110
+// Handler-map getter: videooutput.resolution
+uint32_t Test_HandleRequest_VideoOutputResolution()
+{
+    return DelegateGetterTest("videooutput.resolution");
+}
+
+// TEST_ID: AGC_L0_111
+// Handler-map getter: videooutput.hdcp
+uint32_t Test_HandleRequest_VideoOutputHdcp()
+{
+    return DelegateGetterTest("videooutput.hdcp");
+}
+
+// TEST_ID: AGC_L0_112
+// Handler-map getter: videooutput.cecstate
+uint32_t Test_HandleRequest_VideoOutputCecActiveState()
+{
+    return DelegateGetterTest("videooutput.cecstate");
+}
+
+// TEST_ID: AGC_L0_113
+// Handler-map getter: videooutput.port
+uint32_t Test_HandleRequest_VideoOutputPort()
+{
+    return DelegateGetterTest("videooutput.port");
+}
+
+// TEST_ID: AGC_L0_114
+// Handler-map getter: videooutput.refreshrate
+uint32_t Test_HandleRequest_VideoOutputRefreshRate()
+{
+    return DelegateGetterTest("videooutput.refreshrate");
+}
+
+// TEST_ID: AGC_L0_115
+// Handler-map getter: videooutput.colordepth
+uint32_t Test_HandleRequest_VideoOutputColorDepth()
+{
+    return DelegateGetterTest("videooutput.colordepth");
+}
+
+// TEST_ID: AGC_L0_116
+// Handler-map getter: videooutput.colorformat
+uint32_t Test_HandleRequest_VideoOutputColorFormat()
+{
+    return DelegateGetterTest("videooutput.colorformat");
+}
+
+// TEST_ID: AGC_L0_117
+// Handler-map getter: videooutput.colorimetry
+uint32_t Test_HandleRequest_VideoOutputColorimetry()
+{
+    return DelegateGetterTest("videooutput.colorimetry");
+}
+
+// TEST_ID: AGC_L0_118
+// Handler-map getter: videooutput.dynamicrange
+uint32_t Test_HandleRequest_VideoOutputDynamicRange()
+{
+    return DelegateGetterTest("videooutput.dynamicrange");
+}
+
+// TEST_ID: AGC_L0_119
+// Handler-map getter: videooutput.quantizationrange
+uint32_t Test_HandleRequest_VideoOutputQuantizationRange()
+{
+    return DelegateGetterTest("videooutput.quantizationrange");
+}
+
+// ============================================================================
+// Tests AGC_L0_108 – AGC_L0_109 — actions.start null/empty intent validation
+// ============================================================================
+// TEST_ID: AGC_L0_108
+// actions.start with {"intent":null} → ERROR_BAD_REQUEST
+// The intent field is JSON null; ActionsStart must reject it before forwarding.
+uint32_t Test_HandleRequest_ActionsStart_NullIntentField()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "actions.start", "{\"intent\":null}", result);
+    ExpectEqU32(tr, rc, ERROR_BAD_REQUEST, "actions.start with null intent field returns ERROR_BAD_REQUEST");
+    return tr.failures;
+}
+
+// TEST_ID: AGC_L0_109
+// actions.start with {"intent":{}} → ERROR_BAD_REQUEST
+// An empty object is semantically meaningless; ActionsStart must reject it.
+uint32_t Test_HandleRequest_ActionsStart_EmptyObjectIntentField()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "actions.start", "{\"intent\":{}}", result);
+    ExpectEqU32(tr, rc, ERROR_BAD_REQUEST, "actions.start with empty object intent field returns ERROR_BAD_REQUEST");
+    return tr.failures;
+}
+
+// ============================================================================
+// texttospeech.speak tests
+// ============================================================================
+
+// texttospeech.speak with valid payload returns ERROR_UNAVAILABLE in L0
+// because the TTS COM-RPC interface (GetTTS()) is nullptr.
+uint32_t Test_HandleRequest_TextToSpeechSpeak_ValidPayload()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "texttospeech.speak", R"({"text":"Hello world"})", result);
+    ExpectEqU32(tr, rc, ERROR_UNAVAILABLE, "texttospeech.speak returns ERROR_UNAVAILABLE when TTS plugin unavailable");
+    return tr.failures;
+}
+
+// texttospeech.speak with empty payload returns ERROR_BAD_REQUEST.
+uint32_t Test_HandleRequest_TextToSpeechSpeak_EmptyPayload()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "texttospeech.speak", "", result);
+    ExpectEqU32(tr, rc, ERROR_BAD_REQUEST, "texttospeech.speak with empty payload returns ERROR_BAD_REQUEST");
+    return tr.failures;
+}
+
+// texttospeech.speak with null payload returns ERROR_BAD_REQUEST.
+uint32_t Test_HandleRequest_TextToSpeechSpeak_NullPayload()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "texttospeech.speak", "null", result);
+    ExpectEqU32(tr, rc, ERROR_BAD_REQUEST, "texttospeech.speak with null payload returns ERROR_BAD_REQUEST");
+    return tr.failures;
+}
+
+// texttospeech.speak with invalid JSON payload returns ERROR_BAD_REQUEST.
+uint32_t Test_HandleRequest_TextToSpeechSpeak_InvalidJSON()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "texttospeech.speak", "{invalid json}", result);
+    ExpectEqU32(tr, rc, ERROR_BAD_REQUEST, "texttospeech.speak with invalid JSON returns ERROR_BAD_REQUEST");
+    return tr.failures;
+}
+
+// texttospeech.speak with empty text returns ERROR_INVALID_INPUT_LENGTH.
+uint32_t Test_HandleRequest_TextToSpeechSpeak_EmptyText()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "texttospeech.speak", R"({"text":""})", result);
+    ExpectEqU32(tr, rc, ERROR_INVALID_INPUT_LENGTH, "texttospeech.speak with empty text returns ERROR_INVALID_INPUT_LENGTH");
+    return tr.failures;
+}
+
+// texttospeech.speak with empty callsign (from ctx.appId) returns ERROR_INVALID_INPUT_LENGTH.
+uint32_t Test_HandleRequest_TextToSpeechSpeak_EmptyCallsign()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+    ctx.appId = ""; // Empty callsign from context
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "texttospeech.speak", R"({"text":"Hello"})", result);
+    ExpectEqU32(tr, rc, ERROR_INVALID_INPUT_LENGTH, "texttospeech.speak with empty callsign returns ERROR_INVALID_INPUT_LENGTH");
+    return tr.failures;
+}
+
+// texttospeech.speak is case-insensitive: TEXTTOSPEECH.SPEAK is lowered
+// internally and routes to the same handler as texttospeech.speak.
+uint32_t Test_HandleRequest_TextToSpeechSpeak_CaseInsensitive()
+{
+    TestResult tr;
+    PluginAndService& ps = SharedFixture::instance().ps();
+
+    QIGuard<Exchange::IAppGatewayRequestHandler> handler(ps.plugin);
+    std::string result;
+    Exchange::GatewayContext ctx = DefaultContext();
+
+    const uint32_t rc = handler->HandleAppGatewayRequest(ctx, "TEXTTOSPEECH.SPEAK", R"({"text":"Hello"})", result);
+    ExpectEqU32(tr, rc, ERROR_UNAVAILABLE, "TEXTTOSPEECH.SPEAK (uppercase) routes same as texttospeech.speak");
+    return tr.failures;
+}

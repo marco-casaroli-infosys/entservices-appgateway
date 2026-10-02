@@ -40,6 +40,7 @@ set(MODULE_NAME ${NAMESPACE}${PLUGIN_NAME})
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(APPGATEWAY_L1TEST_TARGET "")
 
 # Standalone when configured directly with: cmake -S <repo>/Tests/L1Tests ...
 set(_L1TESTS_STANDALONE_BUILD OFF)
@@ -75,6 +76,14 @@ if(USE_THUNDER_R4)
     # plugins (some helper headers use this define for interface differences).
     add_compile_definitions(USE_THUNDER_R4)
 endif()
+
+# Since that root file is not executed here, re-apply it
+# explicitly so it matches the marker file path the L1 workflow/tests manage
+# (/etc/rdkappmanagers) instead of permanently false.
+if(NOT RDKAPPMANAGERS_PATH)
+    set(RDKAPPMANAGERS_PATH "/etc/rdkappmanagers")
+endif()
+add_compile_definitions(RDKAPPMANAGERS_PATH="${RDKAPPMANAGERS_PATH}")
 
 # ---------------------------------------------------------------------------
 # ConfigGenerator integration (L1Tests-only builds)
@@ -140,6 +149,14 @@ if(_L1TESTS_STANDALONE_BUILD)
         # AppGateway/CMakeLists.txt defines the implementation library target
         # which AppGatewayL1Test must link against to resolve symbols.
         add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/../../AppGateway ${CMAKE_BINARY_DIR}/AppGateway)
+
+        if(TARGET AppGateway)
+            set(APPGATEWAY_L1TEST_TARGET AppGateway)
+        elseif(TARGET ${NAMESPACE}AppGateway)
+            set(APPGATEWAY_L1TEST_TARGET ${NAMESPACE}AppGateway)
+        else()
+            message(FATAL_ERROR "AppGateway target was not created for the L1 tests-only build")
+        endif()
     endif()
 
     if(PLUGIN_APPGATEWAYCOMMON)
@@ -151,7 +168,7 @@ if(_L1TESTS_STANDALONE_BUILD)
         # 100ms during L1 tests. No Thunder daemon runs in the test environment
         # so every Subscribe call exhausts its full timeout; 4 calls × 2000ms
         # adds ~8s of dead wait per Initialize() cycle.
-        target_compile_definitions(AppGatewayCommon PRIVATE
+        target_compile_definitions(${NAMESPACE}AppGatewayCommon PRIVATE
             SYSTEM_DELEGATE_SUBSCRIBE_TIMEOUT_MS=100
         )
     endif()
@@ -256,7 +273,7 @@ if(PLUGIN_APPGATEWAY)
     )
 
     list(APPEND APPGATEWAY_L1TEST_LIB
-        AppGateway
+        ${APPGATEWAY_L1TEST_TARGET}
         ${NAMESPACE}Plugins::${NAMESPACE}Plugins
     )
 else()
@@ -275,6 +292,7 @@ if(PLUGIN_APPGATEWAYCOMMON)
         AppGatewayCommon/AppGatewayCommon_lifecycle_test.cpp
         AppGatewayCommon/AppGatewayCommon_events_test.cpp
         AppGatewayCommon/AppGatewayCommon_display_test.cpp
+        AppGatewayCommon/AppGatewayCommon_branding_test.cpp
     )
 
     list(APPEND APPGATEWAYCOMMON_L1TEST_INC
@@ -283,7 +301,7 @@ if(PLUGIN_APPGATEWAYCOMMON)
     )
 
     list(APPEND APPGATEWAYCOMMON_L1TEST_LIB
-        AppGatewayCommon
+        ${NAMESPACE}AppGatewayCommon
         ${NAMESPACE}Plugins::${NAMESPACE}Plugins
     )
 else()

@@ -55,7 +55,7 @@ public:
     ~ConnChangeCollector() override = default;
 
     // Implement Core::IUnknown non-owning semantics for test stack object.
-    void AddRef() const override {}
+    uint32_t AddRef() const override { return 1; }
     uint32_t Release() const override { return WPEFramework::Core::ERROR_NONE; }
     void* QueryInterface(const uint32_t id) override
     {

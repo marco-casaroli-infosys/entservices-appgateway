@@ -1,0 +1,20 @@
+name: Component Release Main
+
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag version to release (e.g. 1.2.3)'
+        required: true
+        type: string
+
+jobs:
+  release:
+    uses: rdkcentral/build_tools_workflows/.github/workflows/component-release-main.yml@fccb6e1d47a4570cb322221c143e3aca1b3dd6ab # 1.0.0
+    with:
+      tag: ${{ inputs.tag }}
+    secrets:
+      RDKCM_DEPLOY_KEY: ${{ secrets.RDKCM_DEPLOY_KEY }}

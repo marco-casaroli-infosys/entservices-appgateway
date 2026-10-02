@@ -52,6 +52,7 @@ namespace WPEFramework
         {
             std::string alias;
             std::string event;
+            std::string eventHook;
             std::string permissionGroup;
             JsonValue additionalContext;
             bool includeContext = false;
@@ -85,6 +86,9 @@ namespace WPEFramework
 
             // New method to check if the event field exists for a given key
             bool HasEvent(const std::string &key);
+
+            // New method to check if an eventHook is configured for a given key
+            bool HasEventHook(const std::string &key, std::string &hookMethod);
 
             // New method to check if includeContext is enabled for a given key
             bool HasIncludeContext(const std::string &key, JsonValue& additionalContext);

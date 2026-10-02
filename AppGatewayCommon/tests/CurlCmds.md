@@ -22,7 +22,7 @@ curl -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"100","method
 
 ## org.rdk.AppGatewayCommon.1: org.rdk.System callsign-derived aliases
 
-Below are example requests for each of the 13 methods exposed by org.rdk.AppGatewayCommon.1. 
+Below are example requests for each of the 14 methods exposed by org.rdk.AppGatewayCommon.1 (methods 1–9 via org.rdk.System; methods 10–14 are Device Branding APIs via IDeviceInfo). 
 - For getters/response-only methods, no params are included.
 - For methods that require input, an example params object is provided.
 - For subscribe methods, the listen parameter is demonstrated.
@@ -100,4 +100,74 @@ curl -X POST -H 'Content-Type: application/json' \
 curl -X POST -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":11,"method":"org.rdk.AppGatewayCommon.1.getSecondScreenFriendlyName"}' \
   http://127.0.0.1:9998/jsonrpc
+```
+
+---
+
+## Device Branding APIs (Phase 1) - Firebolt 9.0.0
+
+10) setDeviceOsName
+- Sets the operating system name via DeviceInfo.osname (persisted across reboots)
+```bash
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":200,"method":"org.rdk.AppGatewayCommon.1.setDeviceOsName","params":{"value":"RDK-E"}}' \
+  http://127.0.0.1:9998/jsonrpc
+# Expected: {"jsonrpc":"2.0","id":200,"result":null}
+```
+
+11) getDeviceOsName
+- Reads the operating system name from DeviceInfo.osname
+```bash
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":201,"method":"org.rdk.AppGatewayCommon.1.getDeviceOsName"}' \
+  http://127.0.0.1:9998/jsonrpc
+# Expected: {"jsonrpc":"2.0","id":201,"result":"RDK-E"}
+```
+
+12) setDeviceOsVersion
+- Sets the operating system version via DeviceInfo.osversion (persisted across reboots)
+```bash
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":202,"method":"org.rdk.AppGatewayCommon.1.setDeviceOsVersion","params":{"value":"8.3"}}' \
+  http://127.0.0.1:9998/jsonrpc
+# Expected: {"jsonrpc":"2.0","id":202,"result":null}
+```
+
+13) getDeviceOsVersion
+- Reads the operating system version from DeviceInfo.osversion
+```bash
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":203,"method":"org.rdk.AppGatewayCommon.1.getDeviceOsVersion"}' \
+  http://127.0.0.1:9998/jsonrpc
+# Expected: {"jsonrpc":"2.0","id":203,"result":"8.3"}
+```
+
+14) getDeviceFirmware
+- Reads the firmware image name from DeviceInfo.firmwareversion.imagename (GET only)
+```bash
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":204,"method":"org.rdk.AppGatewayCommon.1.getDeviceFirmware"}' \
+  http://127.0.0.1:9998/jsonrpc
+# Expected: {"jsonrpc":"2.0","id":204,"result":"SKXI11ADS_MIDDLEWARE_DEV_develop_20251101123542"}
+```
+
+### Error path: DeviceInfo plugin unavailable
+- Deactivate DeviceInfo and confirm error response
+```bash
+curl -d '{"jsonrpc":"2.0","id":1,"method":"Controller.1.deactivate","params":{"callsign":"DeviceInfo"}}' \
+  http://127.0.0.1:9998/jsonrpc
+
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":205,"method":"org.rdk.AppGatewayCommon.1.getDeviceOsName"}' \
+  http://127.0.0.1:9998/jsonrpc
+# Expected: error response (Core::ERROR_UNAVAILABLE)
+```
+
+### Invalid SET payload
+- Missing 'value' field should return a bad request error
+```bash
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":206,"method":"org.rdk.AppGatewayCommon.1.setDeviceOsName","params":{}}' \
+  http://127.0.0.1:9998/jsonrpc
+# Expected: {"jsonrpc":"2.0","id":206,"error":{"code":-32602,"message":"Invalid payload: missing or invalid 'value' field"}}
 ```

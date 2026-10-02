@@ -103,6 +103,40 @@ namespace Plugin {
             const std::string mDestination;
         };
 
+        class EXTERNAL EventHookJob : public Core::IDispatch
+        {
+        protected:
+            EventHookJob(AppGatewayImplementation* parent,
+                const Context& context,
+                const std::string& hookMethod)
+                : mParent(*parent), mContext(context), mHookMethod(hookMethod)
+            {
+                mParent.AddRef();
+            }
+
+        public:
+            EventHookJob() = delete;
+            EventHookJob(const EventHookJob&) = delete;
+            EventHookJob& operator=(const EventHookJob&) = delete;
+            ~EventHookJob()
+            {
+                mParent.Release();
+            }
+
+        public:
+            static Core::ProxyType<Core::IDispatch> Create(AppGatewayImplementation* parent,
+                const Context& context, const std::string& hookMethod)
+            {
+                return (Core::ProxyType<Core::IDispatch>(Core::ProxyType<EventHookJob>::Create(parent, context, hookMethod)));
+            }
+            virtual void Dispatch() override;
+
+        private:
+            AppGatewayImplementation& mParent;
+            const Context mContext;
+            const std::string mHookMethod;
+        };
+
         Core::hresult HandleEvent(const Context &context, const string &alias, const string &event, const string &origin,  const bool listen);
                 
         void ReturnMessageInSocket(const Context& context, const string payload ) {
@@ -126,11 +160,9 @@ namespace Plugin {
         mutable Core::CriticalSection mAppNotificationsLock;
         mutable Core::CriticalSection mAppGatewayResponderLock;
         mutable Core::CriticalSection mInternalGatewayResponderLock;
-        mutable Core::CriticalSection mAuthenticatorLock;
         Exchange::IAppNotifications *mAppNotifications; // Shared pointer to AppNotifications
         Exchange::IAppGatewayResponder *mAppGatewayResponder;
         Exchange::IAppGatewayResponder *mInternalGatewayResponder; // Shared pointer to InternalGatewayResponder
-        Exchange::IAppGatewayAuthenticator *mAuthenticator; // Shared pointer to Authenticator
         uint32_t InitializeResolver();
         uint32_t InitializeWebsocket();
         uint32_t ProcessComRpcRequest(const Context &context, const string& alias, const string& method, const string& params, const string& origin, string &resolution);
@@ -139,7 +171,6 @@ namespace Plugin {
         Core::hresult InternalResolve(const Context &context, const string &method, const string &params, const string &origin, string& resolution);
         Core::hresult FetchResolvedData(const Context &context, const string &method, const string &params, const string &origin, string& resolution);
         Core::hresult InternalResolutionConfigure(std::vector<std::string>&& configPaths);
-        Exchange::IAppGatewayAuthenticator* GetAppGatewayAuthenticatorInterface();
         void SendToLaunchDelegate(const Context& context, const string& payload);
         std::string ReadCountryFromConfigFile();
     };

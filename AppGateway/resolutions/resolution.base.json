@@ -238,6 +238,10 @@
             "alias": "org.rdk.AppGatewayCommon",
             "useComRpc": true
         },
+        "device.dolbyatmosexperienceavailable": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
         "device.onhdrchanged": {
             "alias": "org.rdk.AppGatewayCommon",
             "event": "Device.onHdrChanged"
@@ -257,6 +261,10 @@
         "device.onaudiochanged": {
             "alias": "org.rdk.AppGatewayCommon",
             "event": "Device.onAudioChanged"
+        },
+        "device.ondolbyatmosexperienceavailablechanged": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "event": "Device.onDolbyAtmosExperienceAvailableChanged"
         },
         "device.ondevicenamechanged": {
             "alias": "org.rdk.AppGatewayCommon",
@@ -312,11 +320,16 @@
         },
         "lifecycle2.onstatechanged": {
             "alias": "org.rdk.AppGatewayCommon",
-            "event": "Lifecycle2.onStateChanged"
+            "event": "Lifecycle2.onStateChanged",
+            "eventHook": "lifecycle.ready"
         },
         "actions.onintent": {
             "alias": "org.rdk.AppGatewayCommon",
             "event": "Actions.onIntent"
+        },
+        "discovery.onnavigateto": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "event": "Discovery.onNavigateTo"
         },
         "presentation.focused": {
             "alias": "org.rdk.AppGatewayCommon",
@@ -325,10 +338,6 @@
         "presentation.onfocusedchanged": {
             "alias": "org.rdk.AppGatewayCommon",
             "event": "Presentation.onFocusedChanged"
-        },
-        "secondscreen.onlaunchrequest": {
-            "alias": "org.rdk.AppGatewayCommon",
-            "event": "secondscreen.onLaunchRequest"
         },
         "accessibility.audioDescription": {
             "alias": "org.rdk.AppGatewayCommon",
@@ -355,10 +364,6 @@
             "useComRpc": true
         },
         "discovery.watched": {
-            "alias":"org.rdk.AppGatewayCommon",
-            "useComRpc": true
-        },
-        "localization.presentationlanguage": {
             "alias":"org.rdk.AppGatewayCommon",
             "useComRpc": true
         },
@@ -440,7 +445,7 @@
         },
         "metrics.appInfo": {
             "alias":"org.rdk.AppGatewayCommon",
-            "event": "Metrics.onEvent"
+            "useComRpc": true
         },
         "network.connected": {
             "alias":"org.rdk.AppGatewayCommon",
@@ -460,7 +465,8 @@
             "alias": "org.rdk.TextToSpeech.getttsconfiguration"
         },
         "TextToSpeech.speak": {
-            "alias": "org.rdk.TextToSpeech.speak"
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
         },
         "TextToSpeech.setttsconfiguration": {
             "alias": "org.rdk.TextToSpeech.setttsconfiguration"
@@ -476,6 +482,34 @@
         },
         "TextToSpeech.getspeechstate": {
             "alias": "org.rdk.TextToSpeech.getspeechstate"
+        },
+        "SpeechSynthesis.voices": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "SpeechSynthesis.speak": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "SpeechSynthesis.cancel": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "SpeechSynthesis.pause": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "SpeechSynthesis.resume": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "SpeechSynthesis.onUtteranceEvent": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "event": "SpeechSynthesis.onUtteranceEvent"
+        },
+        "SpeechSynthesis.onVoicesChanged": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "event": "SpeechSynthesis.onVoicesChanged"
         },
         "TextToSpeech.onWillspeak": {
             "alias": "org.rdk.AppGatewayCommon",
@@ -549,6 +583,26 @@
             "alias": "org.rdk.AppGatewayCommon",
             "useComRpc": true
         },
+        "device.osName": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "device.setOsName": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "device.osVersion": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "device.setOsVersion": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "device.firmware": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
         "stats.memoryUsage": {
             "alias": "org.rdk.AppGatewayCommon",
             "useComRpc": true
@@ -574,6 +628,74 @@
             "useComRpc": true
         },
         "device.sku": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "parentalcontrol.pincontrol": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "parentalcontrol.blocknotratedcontent": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "parentalcontrol.viewingrestrictions": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "videooutput.resolution": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "videooutput.onresolutionchanged": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "event": "VideoOutput.onResolutionChanged"
+        },
+        "videooutput.hdcp": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "videooutput.onhdcpchanged": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "event": "VideoOutput.onHdcpChanged"
+        },
+        "videooutput.cecstate": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "videooutput.oncecstatechanged": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "event": "VideoOutput.onCecstateChanged"
+        },
+        "videooutput.port": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "videooutput.onportchanged": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "event": "VideoOutput.onPortChanged"
+        },
+        "videooutput.refreshrate": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "videooutput.colordepth": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "videooutput.colorformat": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "videooutput.colorimetry": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "videooutput.dynamicrange": {
+            "alias": "org.rdk.AppGatewayCommon",
+            "useComRpc": true
+        },
+        "videooutput.quantizationrange": {
             "alias": "org.rdk.AppGatewayCommon",
             "useComRpc": true
         }

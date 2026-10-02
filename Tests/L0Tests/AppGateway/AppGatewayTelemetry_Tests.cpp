@@ -745,3 +745,48 @@ uint32_t Test_Telemetry_Compact_ArrayPayload()
 
     return tr.failures;
 }
+
+// ---------------------------------------------------------------------------
+// Test 23: RecordTelemetryEvent - Ripple Log Markers (raw CSV path)
+//          Covers the new SendT2Event(const char*, const std::string&) overload
+//          for APP_METRICS_ERROR_split, APP_SIGNIN_STATUS_split, APP_READY_split.
+//          These markers bypass JSON wrapping and send raw CSV directly to T2.
+// ---------------------------------------------------------------------------
+uint32_t Test_Telemetry_RecordTelemetryEvent_RippleLogMarkers()
+{
+    TestResult tr;
+    TelemetryGuard guard;
+
+    auto& t = AppGatewayTelemetry::getInstance();
+    const auto ctx = MakeCtx(200, 200, "com.test.app");
+
+    // APP_METRICS_ERROR_split: CSV format appId,Code,type,visible,description
+    {
+        const std::string csvData = "com.test.app,503,network,true,Service unavailable";
+        auto rc = t.RecordTelemetryEvent(ctx, AGW_MARKER_APP_METRICS_ERROR, csvData);
+        ExpectEqU32(tr, rc, ERROR_NONE, "RecordTelemetryEvent APP_METRICS_ERROR_split returns ERROR_NONE");
+    }
+
+    // APP_SIGNIN_STATUS_split: CSV format appId,signInStatus (true = signed in)
+    {
+        const std::string csvSignIn = "com.test.app,true";
+        auto rc = t.RecordTelemetryEvent(ctx, AGW_MARKER_APP_SIGNIN_STATUS, csvSignIn);
+        ExpectEqU32(tr, rc, ERROR_NONE, "RecordTelemetryEvent APP_SIGNIN_STATUS_split (signIn) returns ERROR_NONE");
+    }
+
+    // APP_SIGNIN_STATUS_split: CSV format appId,signInStatus (false = signed out)
+    {
+        const std::string csvSignOut = "com.test.app,false";
+        auto rc = t.RecordTelemetryEvent(ctx, AGW_MARKER_APP_SIGNIN_STATUS, csvSignOut);
+        ExpectEqU32(tr, rc, ERROR_NONE, "RecordTelemetryEvent APP_SIGNIN_STATUS_split (signOut) returns ERROR_NONE");
+    }
+
+    // APP_READY_split: CSV format appId
+    {
+        const std::string csvReady = "com.test.app";
+        auto rc = t.RecordTelemetryEvent(ctx, AGW_MARKER_APP_READY, csvReady);
+        ExpectEqU32(tr, rc, ERROR_NONE, "RecordTelemetryEvent APP_READY_split returns ERROR_NONE");
+    }
+
+    return tr.failures;
+}

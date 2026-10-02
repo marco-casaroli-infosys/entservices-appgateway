@@ -71,7 +71,7 @@ namespace MockJSONRPC {
         // AddRef/Release are no-ops: lifetime is managed by Core::Sink<> wrapper.
         // Core::Sink overrides these virtuals with its own ref-count management,
         // so these bodies are never reached when used as Core::Sink<MockLocalDispatcher>.
-        void AddRef() const override {}
+        uint32_t AddRef() const override { return 1; }
         uint32_t Release() const override { return 0; }
 
         void SetHandler(const std::string& method, InvokeHandler handler)

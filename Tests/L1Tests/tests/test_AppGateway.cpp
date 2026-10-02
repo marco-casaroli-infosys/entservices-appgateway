@@ -49,6 +49,7 @@ using namespace WPEFramework::Plugin;
 using ::testing::_;
 using ::testing::NiceMock;
 using ::testing::Return;
+using ::testing::StrEq;
 
 namespace {
 
@@ -88,25 +89,25 @@ static WorkerPoolGuard gWorkerPool;
 
 class TestAppGateway final : public AppGateway {
 public:
-    void AddRef() const override {}
+    uint32_t AddRef() const override { return 1; }
     uint32_t Release() const override { return Core::ERROR_NONE; }
 };
 
 class TestAppGatewayTelemetry final : public AppGatewayTelemetry {
 public:
-    void AddRef() const override {}
+    uint32_t AddRef() const override { return 1; }
     uint32_t Release() const override { return Core::ERROR_NONE; }
 };
 
 class TestAppGatewayImplementation final : public AppGatewayImplementation {
 public:
-    void AddRef() const override {}
+    uint32_t AddRef() const override { return 1; }
     uint32_t Release() const override { return Core::ERROR_NONE; }
 };
 
 class TestAppGatewayResponderImplementation final : public AppGatewayResponderImplementation {
 public:
-    void AddRef() const override {}
+    uint32_t AddRef() const override { return 1; }
     uint32_t Release() const override { return Core::ERROR_NONE; }
 };
 
@@ -125,7 +126,7 @@ public:
     {
     }
 
-    void AddRef() const override {}
+    uint32_t AddRef() const override { return 1; }
     uint32_t Release() const override { return Core::ERROR_NONE; }
 
     void OnAppConnectionChanged(const string& appId, const uint32_t connectionId, const bool connected) override
@@ -2009,7 +2010,7 @@ TEST(AppGatewayPluginTest, AppGatewayResponderImplementation_DispatchWsMsg_Compl
 // Mock IAppGatewayRequestHandler for ProcessComRpcRequest tests
 class MockRequestHandler : public Exchange::IAppGatewayRequestHandler {
 public:
-    void AddRef() const override {}
+    uint32_t AddRef() const override { return 1; }
     uint32_t Release() const override { return Core::ERROR_NONE; }
 
     BEGIN_INTERFACE_MAP(MockRequestHandler)
@@ -2032,7 +2033,7 @@ public:
 // Mock IAppGatewayAuthenticator for permission group tests
 class MockAuthenticator : public Exchange::IAppGatewayAuthenticator {
 public:
-    void AddRef() const override {}
+    uint32_t AddRef() const override { return 1; }
     uint32_t Release() const override { return Core::ERROR_NONE; }
 
     BEGIN_INTERFACE_MAP(MockAuthenticator)
@@ -2076,7 +2077,7 @@ TEST(AppGatewayPluginTest, AppGatewayImplementation_ProcessComRpcRequest_Handler
 
     EXPECT_CALL(service, Release()).Times(::testing::AnyNumber()).WillRepeatedly(Return(Core::ERROR_NONE));
     EXPECT_CALL(service, QueryInterfaceByCallsign(_, _)).Times(::testing::AnyNumber())
-        .WillRepeatedly(Return(static_cast<void*>(&handler)));
+        .WillRepeatedly(Return(static_cast<void*>(static_cast<Exchange::IAppGatewayRequestHandler*>(&handler))));
 
     const std::string cfg = R"({
         "resolutions": {
@@ -2114,7 +2115,7 @@ TEST(AppGatewayPluginTest, AppGatewayImplementation_ProcessComRpcRequest_Handler
 
     EXPECT_CALL(service, Release()).Times(::testing::AnyNumber()).WillRepeatedly(Return(Core::ERROR_NONE));
     EXPECT_CALL(service, QueryInterfaceByCallsign(_, _)).Times(::testing::AnyNumber())
-        .WillRepeatedly(Return(static_cast<void*>(&handler)));
+        .WillRepeatedly(Return(static_cast<void*>(static_cast<Exchange::IAppGatewayRequestHandler*>(&handler))));
 
     const std::string cfg = R"({
         "resolutions": {
@@ -2148,10 +2149,12 @@ TEST(AppGatewayPluginTest, AppGatewayImplementation_FetchResolvedData_Permission
 
     impl.mService = &service;
     impl.mResolverPtr = std::make_shared<Resolver>(nullptr);
-    impl.mAuthenticator = &auth;
 
     EXPECT_CALL(service, Release()).Times(::testing::AnyNumber()).WillRepeatedly(Return(Core::ERROR_NONE));
-    EXPECT_CALL(service, QueryInterfaceByCallsign(_, _)).Times(::testing::AnyNumber()).WillRepeatedly(Return(nullptr));
+    ON_CALL(service, QueryInterfaceByCallsign(_, _)).WillByDefault(Return(nullptr));
+    EXPECT_CALL(service, QueryInterfaceByCallsign(_, StrEq(GATEWAY_AUTHENTICATOR_CALLSIGN)))
+        .Times(::testing::AnyNumber())
+        .WillRepeatedly(Return(static_cast<void*>(static_cast<Exchange::IAppGatewayAuthenticator*>(&auth))));
 
     const std::string cfg = R"({
         "resolutions": {
@@ -2171,7 +2174,6 @@ TEST(AppGatewayPluginTest, AppGatewayImplementation_FetchResolvedData_Permission
               impl.FetchResolvedData(ctx, "device.name", "{}", "org.rdk.AppGateway", resolution));
     EXPECT_FALSE(resolution.empty());
 
-    impl.mAuthenticator = nullptr;
     std::remove(path.c_str());
 }
 
@@ -2185,10 +2187,12 @@ TEST(AppGatewayPluginTest, AppGatewayImplementation_FetchResolvedData_Permission
 
     impl.mService = &service;
     impl.mResolverPtr = std::make_shared<Resolver>(nullptr);
-    impl.mAuthenticator = &auth;
 
     EXPECT_CALL(service, Release()).Times(::testing::AnyNumber()).WillRepeatedly(Return(Core::ERROR_NONE));
-    EXPECT_CALL(service, QueryInterfaceByCallsign(_, _)).Times(::testing::AnyNumber()).WillRepeatedly(Return(nullptr));
+    ON_CALL(service, QueryInterfaceByCallsign(_, _)).WillByDefault(Return(nullptr));
+    EXPECT_CALL(service, QueryInterfaceByCallsign(_, StrEq(GATEWAY_AUTHENTICATOR_CALLSIGN)))
+        .Times(::testing::AnyNumber())
+        .WillRepeatedly(Return(static_cast<void*>(static_cast<Exchange::IAppGatewayAuthenticator*>(&auth))));
 
     const std::string cfg = R"({
         "resolutions": {
@@ -2208,7 +2212,6 @@ TEST(AppGatewayPluginTest, AppGatewayImplementation_FetchResolvedData_Permission
               impl.FetchResolvedData(ctx, "device.name", "{}", "org.rdk.AppGateway", resolution));
     EXPECT_FALSE(resolution.empty());
 
-    impl.mAuthenticator = nullptr;
     std::remove(path.c_str());
 }
 

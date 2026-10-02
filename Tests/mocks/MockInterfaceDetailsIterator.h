@@ -33,7 +33,7 @@ class MockInterfaceDetailsIterator : public WPEFramework::Exchange::INetworkMana
 public:
     ~MockInterfaceDetailsIterator() override = default;
 
-    MOCK_METHOD(void, AddRef, (), (const, override));
+    MOCK_METHOD(uint32_t, AddRef, (), (const, override));
     MOCK_METHOD(uint32_t, Release, (), (const, override));
 
     MOCK_METHOD(bool, Next, (WPEFramework::Exchange::INetworkManager::InterfaceDetails & details), (override));

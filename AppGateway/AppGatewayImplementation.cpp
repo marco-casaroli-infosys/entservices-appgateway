@@ -25,6 +25,7 @@
 #include "UtilsLogging.h"
 #include "ContextUtils.h"
 #include "ObjectUtils.h"
+#include "UtilsInterface.h"
 #include <fstream>
 #include <streambuf>
 #include "UtilsCallsign.h"
@@ -155,8 +156,7 @@ namespace WPEFramework
             mResolverPtr(nullptr), 
             mAppNotifications(nullptr),
             mAppGatewayResponder(nullptr),
-            mInternalGatewayResponder(nullptr),
-            mAuthenticator(nullptr)
+            mInternalGatewayResponder(nullptr)
         {
             LOGINFO("AppGatewayImplementation constructor");
         }
@@ -188,13 +188,6 @@ namespace WPEFramework
                 mAppGatewayResponder = nullptr;
             }
 
-            if (nullptr != mAuthenticator)
-            {
-                mAuthenticator->Release();
-                mAuthenticator = nullptr;
-            }
-            
-
             // Shared pointer will automatically clean up
             mResolverPtr.reset();
         }
@@ -202,16 +195,11 @@ namespace WPEFramework
         uint32_t AppGatewayImplementation::Configure(PluginHost::IShell *shell)
         {
             LOGINFO("Configuring AppGateway");
-            uint32_t result = Core::ERROR_NONE;
             ASSERT(shell != nullptr);
             mService = shell;
             mService->AddRef();
 
-            result = InitializeResolver();
-            if (Core::ERROR_NONE != result) {
-                return result;
-            }
-            return result;
+            return InitializeResolver();
         }
         
         uint32_t AppGatewayImplementation::InitializeResolver() {
@@ -414,9 +402,13 @@ namespace WPEFramework
             std::string permissionGroup;
             if (mResolverPtr->HasPermissionGroup(method, permissionGroup)) {
                 LOGTRACE("Method '%s' requires permission group '%s'", method.c_str(), permissionGroup.c_str());
-                if (nullptr != GetAppGatewayAuthenticatorInterface()) {
+                ScopedInterface<Exchange::IAppGatewayAuthenticator> authenticator(
+                    mService,
+                    GATEWAY_AUTHENTICATOR_CALLSIGN);
+
+                if (authenticator) {
                     bool allowed = false;
-                    if (Core::ERROR_NONE != mAuthenticator->CheckPermissionGroup(context.appId, permissionGroup, allowed)) {
+                    if (Core::ERROR_NONE != authenticator->CheckPermissionGroup(context.appId, permissionGroup, allowed)) {
                         LOGERR("Failed to check permission group '%s' for appId '%s'", permissionGroup.c_str(), context.appId.c_str());
                         // Track external service error - Permission service failure
                         AppGatewayTelemetry::getInstance().RecordExternalServiceErrorInternal(context, AGW_SERVICE_PERMISSION);
@@ -428,6 +420,11 @@ namespace WPEFramework
                         ErrorUtils::NotPermitted(resolution);
                         return Core::ERROR_GENERAL;
                     }
+                } else {
+                    // Track external service error - Permission service unavailable
+                    AppGatewayTelemetry::getInstance().RecordExternalServiceErrorInternal(context, AGW_SERVICE_PERMISSION);
+                    ErrorUtils::NotPermitted(resolution);
+                    return Core::ERROR_GENERAL;
                 }
             }
             LOGTRACE("Resolved method '%s' to alias '%s'", method.c_str(), alias.c_str());            
@@ -531,6 +528,15 @@ namespace WPEFramework
                         }
                         
                         auto ret_value = HandleEvent(context, alias, eventName, origin, resultValue);
+                        if (ret_value == Core::ERROR_NONE && resultValue) {
+                            std::string hookMethod;
+                            if (mResolverPtr->HasEventHook(method, hookMethod)) {
+                                LOGINFO("PreProcessEvent: eventHook detected for method=%s hook=%s appId=%s",
+                                         method.c_str(), hookMethod.c_str(), context.appId.c_str());
+                                Core::IWorkerPool::Instance().Submit(
+                                    EventHookJob::Create(this, context, hookMethod));
+                            }
+                        }
                         JsonObject returnResult;
                         returnResult["listening"] = resultValue;
                         returnResult["event"] = method;
@@ -545,6 +551,17 @@ namespace WPEFramework
                     LOGERR("Event method '%s' called without parameters", method.c_str());
                     ErrorUtils::CustomBadRequest("Event methods require parameters", resolution);
                     return Core::ERROR_BAD_REQUEST;
+            }
+        }
+
+        void AppGatewayImplementation::EventHookJob::Dispatch()
+        {
+            LOGINFO("EventHookJob: triggering hook method=%s for appId=%s",
+                     mHookMethod.c_str(), mContext.appId.c_str());
+            std::string resolution;
+            const auto rc = mParent.FetchResolvedData(mContext, mHookMethod, "{}", "", resolution);
+            if (rc != Core::ERROR_NONE) {
+                LOGERR("EventHookJob: hook method=%s failed rc=%u", mHookMethod.c_str(), rc);
             }
         }
 
@@ -575,20 +592,6 @@ namespace WPEFramework
                 }
             }
             mInternalGatewayResponder->Respond(context, payload);
-        }
-
-        Exchange::IAppGatewayAuthenticator* AppGatewayImplementation::GetAppGatewayAuthenticatorInterface() {
-            Core::SafeSyncType<Core::CriticalSection> lock(mAuthenticatorLock);
-            if (nullptr == mAuthenticator) {
-                mAuthenticator = mService->QueryInterfaceByCallsign<Exchange::IAppGatewayAuthenticator>(GATEWAY_AUTHENTICATOR_CALLSIGN);
-                if (nullptr == mAuthenticator) {
-                    LOGERR("AppGateway Authenticator not available");
-                    return nullptr;
-                } else {
-                    LOGINFO("AppGateway Authenticator interface acquired");
-                }
-            }
-            return mAuthenticator;
         }
 
         // Helper: read a string key from a JSON file; returns empty if any step fails.

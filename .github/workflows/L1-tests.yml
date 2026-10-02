@@ -17,17 +17,17 @@ on:
         required: false
         type: boolean
         default: false
-    secrets:
-      RDKCM_RDKE:
-        required: true
 
 permissions:
   contents: read
 
 env:
   BUILD_TYPE: Debug
-  THUNDER_REF: "R4.4.1"
-  INTERFACES_REF: "develop"
+  THUNDER_REF: "R4_4-RDK"
+  THUNDER_TOOLS_REF: "R4_4-RDK"
+  THUNDER_TOOLS_COMMIT_SHA: "d5dd83c7c19c49c7f25c558c126500bd2d64f7a4"
+  THUNDER_COMMIT_SHA: "2c0fcc5529e7da734be558ca6efa05d934dcce31"
+  INTERFACES_REF: "topic/RDKEMW-20993"
   NETWORKMANAGER_REF: "cea0da05b03de770e4ce967f0446f28885fc6219"
   AUTOMATICS_UNAME: ${{ secrets.AUTOMATICS_UNAME }}
   AUTOMATICS_PASSCODE: ${{ secrets.AUTOMATICS_PASSCODE }}
@@ -110,7 +110,7 @@ jobs:
            echo "Trigger Source: ${{ inputs.caller_source }}"
 
       - name: Set up CMake
-        uses: jwlawson/actions-setup-cmake@v1.13
+        uses: jwlawson/actions-setup-cmake@65b272e1213f99771fbba0c237e0b3312270e0c9
         with:
           cmake-version: '3.16.x'
 
@@ -151,6 +151,13 @@ jobs:
           repository: rdkcentral/Thunder
           path: Thunder
           ref: ${{env.THUNDER_REF}}
+          fetch-depth: 0
+
+      - name: Pin Thunder commit
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          cd "$GITHUB_WORKSPACE/Thunder"
+          git checkout "${{ env.THUNDER_COMMIT_SHA }}"
 
       - name: Checkout ThunderTools
         if: steps.cache.outputs.cache-hit != 'true'
@@ -158,7 +165,14 @@ jobs:
         with:
           repository: rdkcentral/ThunderTools
           path: ThunderTools
-          ref: R4.4.3
+          ref: ${{env.THUNDER_TOOLS_REF}}
+          fetch-depth: 0
+
+      - name: Pin ThunderTools commit
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          cd "$GITHUB_WORKSPACE/ThunderTools"
+          git checkout "${{ env.THUNDER_TOOLS_COMMIT_SHA }}"
 
       - name: Checkout googletest
         if: steps.cache.outputs.cache-hit != 'true'
@@ -171,7 +185,7 @@ jobs:
       - name: Apply patches ThunderTools
         run: |  
           cd $GITHUB_WORKSPACE/ThunderTools
-          patch -p1 < $GITHUB_WORKSPACE/Tests/patches/00010-R4.4-Add-support-for-project-dir.patch
+          #patch -p1 < $GITHUB_WORKSPACE/Tests/patches/00010-R4.4-Add-support-for-project-dir.patch
           cd -
 
       - name: Build ThunderTools
@@ -192,11 +206,11 @@ jobs:
       - name: Apply patches Thunder
         run: |
           cd $GITHUB_WORKSPACE/Thunder
-          patch -p1 < $GITHUB_WORKSPACE/Tests/patches/Use_Legact_Alt_Based_On_ThunderTools_R4.4.3.patch
-          patch -p1 < $GITHUB_WORKSPACE/Tests/patches/error_code_R4_4.patch
-          patch -p1 < $GITHUB_WORKSPACE/Tests/patches/1004-Add-support-for-project-dir.patch
-          patch -p1 < $GITHUB_WORKSPACE/Tests/patches/RDKEMW-733-Add-ENTOS-IDS.patch
-          patch -p1 < $GITHUB_WORKSPACE/Tests/patches/Jsonrpc_dynamic_error_handling.patch
+          #patch -p1 < $GITHUB_WORKSPACE/Tests/patches/Use_Legact_Alt_Based_On_ThunderTools_R4.4.3.patch
+          #patch -p1 < $GITHUB_WORKSPACE/Tests/patches/error_code_R4_4.patch
+          #patch -p1 < $GITHUB_WORKSPACE/Tests/patches/1004-Add-support-for-project-dir.patch
+          #patch -p1 < $GITHUB_WORKSPACE/Tests/patches/RDKEMW-733-Add-ENTOS-IDS.patch
+          #patch -p1 < $GITHUB_WORKSPACE/Tests/patches/Jsonrpc_dynamic_error_handling.patch
           cd -
 
       - name: Build Thunder
@@ -225,7 +239,6 @@ jobs:
           repository: rdkcentral/entservices-apis
           path: entservices-apis
           ref: ${{env.INTERFACES_REF}}
-          #token : ${{ secrets.RDKCM_RDKE }}
 
       - name: Remove DTV.json from entservices-apis checkout
         if: steps.cache.outputs.cache-hit != 'true'
@@ -468,6 +481,7 @@ jobs:
           # installed into the repo-local prefix. This is critical for `act`, where the
           # environment can differ from GitHub-hosted runners.
           export CMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/install/usr${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+          export CMAKE_MODULE_PATH="$GITHUB_WORKSPACE/install/tools/cmake;$GITHUB_WORKSPACE/install/usr/tools/cmake${CMAKE_MODULE_PATH:+;$CMAKE_MODULE_PATH}"
           export PATH="$GITHUB_WORKSPACE/install/usr/bin:$PATH"
 
           # Explicit fallback for packages that are looked up via <Pkg>_DIR by some projects.
@@ -479,7 +493,9 @@ jobs:
             -S "$GITHUB_WORKSPACE/Tests/L1Tests" \
             -B build/entservices-appgateway-l1tests-only \
             -DCMAKE_BUILD_TYPE=Debug \
+            -DHIDE_NON_EXTERNAL_SYMBOLS=OFF \
             -DCMAKE_PREFIX_PATH="$CMAKE_PREFIX_PATH" \
+            -DCMAKE_MODULE_PATH="$CMAKE_MODULE_PATH" \
             -DConfigGenerator_DIR="$ConfigGenerator_DIR" \
             -DWPEFrameworkPlugins_DIR="$GITHUB_WORKSPACE/install/usr/lib/cmake/WPEFrameworkPlugins" \
             -DDISABLE_SECURITY_TOKEN=ON \
@@ -514,9 +530,13 @@ jobs:
           find build/entservices-appgateway-l1tests-only -maxdepth 1 -type f -name "*.so*" -exec cp -f {} "$GITHUB_WORKSPACE/install/usr/lib/wpeframework/plugins/" \; 2>/dev/null || true
 
           ls -la "$GITHUB_WORKSPACE/install/usr/lib/wpeframework/plugins" || true
-          test -e "$GITHUB_WORKSPACE/install/usr/lib/wpeframework/plugins/libAppGateway.so" || (echo "Missing libAppGateway.so in staged plugin dir" && exit 1)
-          test -e "$GITHUB_WORKSPACE/install/usr/lib/wpeframework/plugins/libAppGatewayCommon.so" || (echo "Missing libAppGatewayCommon.so in staged plugin dir" && exit 1)
-          test -e "$GITHUB_WORKSPACE/install/usr/lib/wpeframework/plugins/libAppNotifications.so" || (echo "Missing libAppNotifications.so in staged plugin dir" && exit 1)
+          plugin_dir="$GITHUB_WORKSPACE/install/usr/lib/wpeframework/plugins"
+          for plugin in AppGateway AppGatewayCommon AppNotifications; do
+            if ! find "$plugin_dir" -maxdepth 1 -type f \( -name "lib${plugin}.so" -o -name "libWPEFramework${plugin}.so" \) -print -quit | grep -q .; then
+              echo "Missing ${plugin} plugin library in staged plugin dir"
+              exit 1
+            fi
+          done
 
       - name: Copy required mock headers into install prefix include/Tests/mocks
         run: |
@@ -542,18 +562,20 @@ jobs:
           echo "APPGATEWAY_CONFIG_PATH=/tmp/app-gateway" >> "$GITHUB_ENV"
           ls -la /tmp/app-gateway || true
 
-      - name: Ensure /opt/ai2managers exists for lifecycle tests
+      - name: Ensure /etc/rdkappmanagers exists for lifecycle tests
         run: |
           # LifecycleDelegate only registers notifications when ConfigUtils::useAppManagers()
-          # returns true, which checks for /opt/ai2managers. The test SetUp creates it too,
+          # returns true, which checks for /etc/rdkappmanagers. The test SetUp creates it too,
           # but pre-creating it here avoids permission issues on some CI environments.
           # Must be a file (not a directory) because the test's SetUp uses fopen().
-          sudo touch /opt/ai2managers
+          sudo rm -f /etc/rdkappmanagers
+          sudo touch /etc/rdkappmanagers
           # Ensure the file is writable by the non-root test runner so that
-          # fopen("/opt/ai2managers", "w") in the lifecycle L1 test SetUp()
+          # fopen("/etc/rdkappmanagers", "w") in the lifecycle L1 test SetUp()
           # does not fail and cause GTEST_SKIP.
-          sudo chmod 0666 /opt/ai2managers
-          ls -l /opt/ai2managers || true
+          sudo chmod 0666 /etc/rdkappmanagers
+          test -f /etc/rdkappmanagers || (echo "Failed to create /etc/rdkappmanagers as regular file" && exit 1)
+          ls -l /etc/rdkappmanagers || true
 
       - name: Run unit tests without valgrind (optionally under gdb)
         run: |

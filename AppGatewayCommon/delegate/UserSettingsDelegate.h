@@ -490,6 +490,80 @@ class UserSettingsDelegate : public BaseEventDelegate{
             }
         }
 
+        Core::hresult GetPinControl(string& result) {
+            LOGINFO("GetPinControl from UserSettings COM interface");
+            result.clear();
+
+            Exchange::IUserSettings* userSettings = GetUserSettingsInterface();
+            if (nullptr == userSettings) {
+                LOGERR("UserSettings COM interface not available");
+                result = "{\"error\":\"couldn't get pin control state\"}";
+                return Core::ERROR_UNAVAILABLE;
+            }
+
+            bool pinControl = false;
+            Core::hresult rc = userSettings->GetPinControl(pinControl);
+
+            if (Core::ERROR_NONE == rc) {
+                result = pinControl ? "true" : "false";
+                return Core::ERROR_NONE;
+            } else {
+                LOGERR("Failed to call GetPinControl on UserSettings COM interface, error: %u", rc);
+                result = "{\"error\":\"couldn't get pin control state\"}";
+                return Core::ERROR_GENERAL;
+            }
+        }
+
+        Core::hresult GetBlockNotRatedContent(string& result) {
+            LOGINFO("GetBlockNotRatedContent from UserSettings COM interface");
+            result.clear();
+
+            Exchange::IUserSettings* userSettings = GetUserSettingsInterface();
+            if (nullptr == userSettings) {
+                LOGERR("UserSettings COM interface not available");
+                result = "{\"error\":\"couldn't get block not rated content state\"}";
+                return Core::ERROR_UNAVAILABLE;
+            }
+
+            bool blockNotRated = false;
+            Core::hresult rc = userSettings->GetBlockNotRatedContent(blockNotRated);
+
+            if (Core::ERROR_NONE == rc) {
+                result = blockNotRated ? "true" : "false";
+                return Core::ERROR_NONE;
+            } else {
+                LOGERR("Failed to call GetBlockNotRatedContent on UserSettings COM interface, error: %u", rc);
+                result = "{\"error\":\"couldn't get block not rated content state\"}";
+                return Core::ERROR_GENERAL;
+            }
+        }
+
+        Core::hresult GetViewingRestrictions(string& result) {
+            LOGINFO("GetViewingRestrictions from UserSettings COM interface");
+            result.clear();
+
+            Exchange::IUserSettings* userSettings = GetUserSettingsInterface();
+            if (nullptr == userSettings) {
+                LOGERR("UserSettings COM interface not available");
+                result = "{\"error\":\"couldn't get viewing restrictions\"}";
+                return Core::ERROR_UNAVAILABLE;
+            }
+
+            // Thunder returns viewingRestrictions as a JSON-encoded string.
+            // Serialize as a proper JSON string value to ensure escaping.
+            string viewingRestrictions;
+            Core::hresult rc = userSettings->GetViewingRestrictions(viewingRestrictions);
+
+            if (Core::ERROR_NONE == rc) {
+                result = std::move(viewingRestrictions);
+                return Core::ERROR_NONE;
+            } else {
+                LOGERR("Failed to call GetViewingRestrictions on UserSettings COM interface, error: %u", rc);
+                result = "{\"error\":\"couldn't get viewing restrictions\"}";
+                return Core::ERROR_GENERAL;
+            }
+        }
+
         Core::hresult GetClosedCaptionsStyle(string& result) {
             LOGINFO("GetClosedCaptionsStyle from TextTrack COM interface");
             result.clear();
@@ -739,15 +813,11 @@ class UserSettingsDelegate : public BaseEventDelegate{
 
             if (rc == Core::ERROR_NONE) {
                 // Transform: return_or_error(.result, "couldn't get locale")
-                // Return the full locale without any transformation
-                if (!presentationLanguage.empty()) {
-                    // Wrap in quotes to make it a valid JSON string
-                    result = "\"" + presentationLanguage + "\"";
-                    return Core::ERROR_NONE;
-                } else {
-                    result = "{\"error\":\"couldn't get locale\"}";
-                    return Core::ERROR_GENERAL;
-                }
+                // Return the full locale without any transformation.
+                // Firebolt spec: presentationLanguage may legitimately be "" when
+                // uninitialized — that is a valid value, not an error.
+                result = "\"" + presentationLanguage + "\"";
+                return Core::ERROR_NONE;
             } else {
                 LOGERR("Failed to call GetPresentationLanguage on UserSettings COM interface, error: %u", rc);
                 result = "{\"error\":\"couldn't get locale\"}";

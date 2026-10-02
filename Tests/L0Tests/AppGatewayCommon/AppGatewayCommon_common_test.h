@@ -21,6 +21,7 @@ using WPEFramework::Core::ERROR_GENERAL;
 using WPEFramework::Core::ERROR_UNAVAILABLE;
 using WPEFramework::Core::ERROR_BAD_REQUEST;
 using WPEFramework::Core::ERROR_UNKNOWN_KEY;
+using WPEFramework::Core::ERROR_INVALID_INPUT_LENGTH;
 using WPEFramework::Plugin::AppGatewayCommon;
 using WPEFramework::PluginHost::IPlugin;
 
@@ -89,7 +90,10 @@ public:
     StubEmitter() : _refCount(1) {}
     ~StubEmitter() override = default;
 
-    void AddRef() const override { _refCount.fetch_add(1, std::memory_order_relaxed); }
+    uint32_t AddRef() const override
+    {
+        return _refCount.fetch_add(1, std::memory_order_relaxed) + 1;
+    }
     uint32_t Release() const override {
         const uint32_t r = _refCount.fetch_sub(1, std::memory_order_acq_rel) - 1;
         if (0 == r) {

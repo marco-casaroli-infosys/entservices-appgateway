@@ -103,6 +103,7 @@ namespace WPEFramework
                     // Use helper functions to extract all fields consistently
                     r.alias = ExtractStringField(resolutionObj, "alias");
                     r.event = ExtractStringField(resolutionObj, "event");
+                    r.eventHook = ExtractStringField(resolutionObj, "eventHook");
                     r.permissionGroup = ExtractStringField(resolutionObj, "permissionGroup");
                     r.additionalContext = ExtractAdditionalContext(resolutionObj, "additionalContext");
                     bool hasAdditionalContext = r.additionalContext.Content() == WPEFramework::Core::JSON::Variant::type::OBJECT;
@@ -111,8 +112,8 @@ namespace WPEFramework
                     // Event which has different payload based on version
                     r.versionedEvent = ExtractBooleanField(resolutionObj, "versionedEvent", hasAdditionalContext);
 
-                    LOGINFO("[Resolver] Loaded resolution for key: %s -> alias: %s, event: %s, permissionGroup: %s, includeContext: %s, useComRpc: %s",
-                            key.c_str(), r.alias.c_str(), r.event.c_str(), r.permissionGroup.c_str(),
+                    LOGINFO("[Resolver] Loaded resolution for key: %s -> alias: %s, event: %s, eventHook: %s, permissionGroup: %s, includeContext: %s, useComRpc: %s",
+                            key.c_str(), r.alias.c_str(), r.event.c_str(), r.eventHook.c_str(), r.permissionGroup.c_str(),
                             r.includeContext ? "true" : "false", r.useComRpc ? "true" : "false");
 
                     // Check if this resolution already exists (will be overridden)
@@ -260,6 +261,19 @@ namespace WPEFramework
                 if (it != mResolutions.end())
                 {
                     return !it->second.event.empty();
+                }
+                return false;
+            }
+
+        bool Resolver::HasEventHook(const std::string &key, std::string &hookMethod)
+            {
+                std::lock_guard<std::mutex> lock(mMutex);
+                std::string lowerKey = StringUtils::toLower(key);
+                auto it = mResolutions.find(lowerKey);
+                if (it != mResolutions.end() && !it->second.eventHook.empty())
+                {
+                    hookMethod = it->second.eventHook;
+                    return true;
                 }
                 return false;
             }

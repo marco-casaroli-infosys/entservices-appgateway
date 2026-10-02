@@ -156,6 +156,10 @@ TEST_F(AppDelegateTest, AGC_L1_018_DeviceUID_Success_ExistingValue)
 
     EXPECT_EQ(Core::ERROR_NONE, rc);
     EXPECT_NE(result.find("existing-uid-1234"), std::string::npos);
+    // Result must be a JSON-quoted string (e.g. "\"existing-uid-1234\"")
+    EXPECT_FALSE(result.empty());
+    EXPECT_EQ('"', result.front());
+    EXPECT_EQ('"', result.back());
 }
 
 TEST_F(AppDelegateTest, AGC_L1_019_DeviceUID_CreatesNewWhenNotFound)
@@ -178,6 +182,9 @@ TEST_F(AppDelegateTest, AGC_L1_019_DeviceUID_CreatesNewWhenNotFound)
     EXPECT_EQ(Core::ERROR_NONE, rc);
     // Result should contain a UUID-style string
     EXPECT_FALSE(result.empty());
+    // Newly generated UID must be returned as a JSON-quoted string (e.g. "\"<uuid>\"")
+    EXPECT_EQ('"', result.front());
+    EXPECT_EQ('"', result.back());
 }
 
 TEST_F(AppDelegateTest, AGC_L1_020_DeviceUID_SetValueFails)

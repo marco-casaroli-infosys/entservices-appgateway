@@ -39,7 +39,7 @@ public:
     END_INTERFACE_MAP
 
     // Real ref-counting so Release() deletes when count hits zero — prevents mock leaks.
-    void AddRef() const override { _refCount++; }
+    uint32_t AddRef() const override { return ++_refCount; }
     uint32_t Release() const override
     {
         const uint32_t result = --_refCount;
@@ -62,7 +62,7 @@ public:
 
     MOCK_METHOD(void, Emit, (const string& event, const string& payload, const string& appId), (override));
 
-    MOCK_METHOD(void, AddRef, (), (const, override));
+    MOCK_METHOD(uint32_t, AddRef, (), (const, override));
     MOCK_METHOD(uint32_t, Release, (), (const, override));
     MOCK_METHOD(void*, QueryInterface, (const uint32_t interfaceNummer), (override));
 };

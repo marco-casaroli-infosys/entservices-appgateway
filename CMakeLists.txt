@@ -21,6 +21,13 @@ cmake_minimum_required(VERSION 3.3)
 
 find_package(WPEFramework)
 
+set(RDKAPPMANAGERS_PATH "" CACHE PATH
+    "Optional path used to detect whether App Managers are enabled")
+if(NOT RDKAPPMANAGERS_PATH)
+    set(RDKAPPMANAGERS_PATH "/tmp/ai2managers")
+endif()
+add_definitions(-DRDKAPPMANAGERS_PATH=\"${RDKAPPMANAGERS_PATH}\")
+
 # All packages that did not deliver a CMake Find script (and some deprecated scripts that need to be removed)
 # are located in the cmake directory. Include it in the search.
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/")

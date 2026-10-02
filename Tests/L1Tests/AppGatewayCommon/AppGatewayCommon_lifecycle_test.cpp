@@ -42,12 +42,12 @@
 using namespace WPEFramework;
 
 namespace {
-// Removes /opt/ai2managers whether it is a file or a directory.
+// Removes /etc/rdkappmanagers whether it is a file or a directory.
 // Uses unlink/rmdir directly instead of stat() + branch to avoid
 // a TOCTOU (time-of-check time-of-use) filesystem race condition.
-inline void RemoveAi2managers()
+inline void RemoveRdkAppManagers()
 {
-    const char* path = "/opt/ai2managers";
+    const char* path = "/etc/rdkappmanagers";
     // unlink() removes files; fails harmlessly with EISDIR/EPERM on directories.
     // rmdir() removes empty directories; fails harmlessly with ENOTDIR on files.
     // If the path does not exist, both fail silently (ENOENT).
@@ -118,13 +118,13 @@ protected:
 
     void SetUp() override
     {
-        // LifecycleDelegate only registers notifications when /opt/ai2managers exists
+        // LifecycleDelegate only registers notifications when /etc/rdkappmanagers exists
         // (ConfigUtils::useAppManagers() gate). Ensure it exists as a regular file.
         // Remove first in case a prior run or CI step left it as a directory.
-        RemoveAi2managers();
-        std::FILE* f = std::fopen("/opt/ai2managers", "w");
+        RemoveRdkAppManagers();
+        std::FILE* f = std::fopen("/etc/rdkappmanagers", "w");
         if (nullptr == f) {
-            GTEST_SKIP() << "Skipping LifecycleDelegate tests: unable to create /opt/ai2managers (insufficient permissions or read-only filesystem)";
+            GTEST_SKIP() << "Skipping LifecycleDelegate tests: unable to create /etc/rdkappmanagers (insufficient permissions or read-only filesystem)";
         }
         std::fclose(f);
 
@@ -182,7 +182,7 @@ protected:
             delete e;
         }
         heapEmitters.clear();
-        RemoveAi2managers();
+        RemoveRdkAppManagers();
     }
 };
 
@@ -538,10 +538,101 @@ TEST_F(LifecycleDelegateTest, AGC_L1_186_GetLastIntent_WithIntent)
     EXPECT_NE(result.find("search://query=testing"), std::string::npos);
 }
 
+/* ---------- SetIntent tests ---------- */
+
+TEST_F(LifecycleDelegateTest, AGC_L1_201_SetIntent_StoresAndGetLastIntent)
+{
+    const auto ctx = MakeContext("test.app");
+    string result;
+
+    // Set a non-empty intent via commoninternal.setintent
+    const auto rc1 = plugin.HandleAppGatewayRequest(ctx, "commoninternal.setintent", R"({"action":"play","content":"video456"})", result);
+    EXPECT_EQ(Core::ERROR_NONE, rc1);
+    EXPECT_EQ("null", result);
+
+    // Verify getlastintent returns the stored intent
+    const auto rc2 = plugin.HandleAppGatewayRequest(ctx, "commoninternal.getlastintent", "{}", result);
+    EXPECT_EQ(Core::ERROR_NONE, rc2);
+    EXPECT_NE(result.find("\"intentId\":"), std::string::npos);
+    EXPECT_NE(result.find("\"intent\":"), std::string::npos);
+    EXPECT_NE(result.find("video456"), std::string::npos);
+}
+
+TEST_F(LifecycleDelegateTest, AGC_L1_202_SetIntent_StoresAndGetActionsIntent)
+{
+    const auto ctx = MakeContext("test.app");
+    string result;
+
+    // Set a non-empty intent via commoninternal.setintent
+    const auto rc1 = plugin.HandleAppGatewayRequest(ctx, "commoninternal.setintent", R"({"type":"search","query":"test"})", result);
+    EXPECT_EQ(Core::ERROR_NONE, rc1);
+
+    // Verify actions.intent returns the stored intent
+    const auto rc2 = plugin.HandleAppGatewayRequest(ctx, "actions.intent", "{}", result);
+    EXPECT_EQ(Core::ERROR_NONE, rc2);
+    EXPECT_NE(result.find("\"intentId\":"), std::string::npos);
+    EXPECT_NE(result.find("\"intent\":"), std::string::npos);
+    EXPECT_NE(result.find("test"), std::string::npos);
+}
+
+TEST_F(LifecycleDelegateTest, AGC_L1_203_SetIntent_EmptyPayload_NoOverwrite)
+{
+    const auto ctx = MakeContext("test.app");
+    string result;
+
+    // First set a non-empty intent via lifecycle callback
+    ASSERT_NE(capturedNotification, nullptr);
+    capturedNotification->OnAppLifecycleStateChanged(
+        "test.app",
+        "instance-setintent",
+        Exchange::ILifecycleManager::UNLOADED,
+        Exchange::ILifecycleManager::INITIALIZING,
+        "playback://original/intent"
+    );
+
+    // Call setintent with empty payload - should no-op and not overwrite
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "commoninternal.setintent", "", result);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ("null", result);
+
+    // Verify the original intent is still there
+    const auto rc2 = plugin.HandleAppGatewayRequest(ctx, "commoninternal.getlastintent", "{}", result);
+    EXPECT_EQ(Core::ERROR_NONE, rc2);
+    EXPECT_NE(result.find("playback://original/intent"), std::string::npos);
+}
+
+TEST_F(LifecycleDelegateTest, AGC_L1_204_SetIntent_NullStringPayload_NoOverwrite)
+{
+    const auto ctx = MakeContext("test.app");
+    string result;
+
+    // First set a non-empty intent via lifecycle callback
+    ASSERT_NE(capturedNotification, nullptr);
+    capturedNotification->OnAppLifecycleStateChanged(
+        "test.app",
+        "instance-nulltest",
+        Exchange::ILifecycleManager::UNLOADED,
+        Exchange::ILifecycleManager::INITIALIZING,
+        "search://original/query"
+    );
+
+    // Call setintent with literal "null" string - should no-op and not overwrite
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "commoninternal.setintent", "null", result);
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ("null", result);
+
+    // Verify the original intent is still there
+    const auto rc2 = plugin.HandleAppGatewayRequest(ctx, "commoninternal.getlastintent", "{}", result);
+    EXPECT_EQ(Core::ERROR_NONE, rc2);
+    EXPECT_NE(result.find("search://original/query"), std::string::npos);
+    // Should NOT contain the literal string "null" as the intent value
+    EXPECT_EQ(result.find("\"intent\":\"null\""), std::string::npos);
+}
+
 /* ================================================================
  * Category B – Null LifecycleManagerState interface
  *
- * LifecycleDelegate is constructed but /opt/ai2managers does NOT
+ * LifecycleDelegate is constructed but /etc/rdkappmanagers does NOT
  * exist, so ConfigUtils::useAppManagers() returns false and the
  * constructor skips Register(). The interfaces remain nullptr.
  * ================================================================ */
@@ -556,8 +647,8 @@ protected:
 
     static void SetUpTestSuite()
     {
-        // Ensure /opt/ai2managers does NOT exist (handles both file and directory)
-        RemoveAi2managers();
+        // Ensure /etc/rdkappmanagers does NOT exist (handles both file and directory)
+        RemoveRdkAppManagers();
 
         sService = new NiceMock<ServiceMock>();
         sPlugin = new Core::Sink<AppGatewayCommon>();
@@ -949,48 +1040,6 @@ TEST_F(LifecycleDelegateTest, AGC_L1_200_Terminating_DispatchesOnUnloading)
 }
 
 /* ================================================================
- * Gap 3 – secondscreen.onLaunchRequest dispatch on ACTIVE
- *
- * Verifies that transitioning to ACTIVE with a navigationIntent
- * containing a "secondScreen" object dispatches
- * secondscreen.onLaunchRequest to subscribed emitters.
- * ================================================================ */
-
-TEST_F(LifecycleDelegateTest, AGC_L1_202_Active_WithSecondScreenIntent_DispatchesOnLaunchRequest)
-{
-    ASSERT_NE(capturedNotification, nullptr);
-
-    // Store navigationIntent containing a secondScreen payload on INITIALIZING
-    capturedNotification->OnAppLifecycleStateChanged(
-        "test.app", "instance-ss-001",
-        Exchange::ILifecycleManager::UNLOADED,
-        Exchange::ILifecycleManager::INITIALIZING,
-        R"({"secondScreen":{"type":"dial","version":"1.7","data":"eyJhcHAiOiJ0ZXN0In0="}})"
-    );
-
-    auto lifecycleDelegate = plugin.mDelegate->getLifecycleDelegate();
-    ASSERT_NE(lifecycleDelegate, nullptr);
-
-    MockEmitter* emitter = new MockEmitter();
-    heapEmitters.push_back(emitter);
-    emitter->AddRef();
-    lifecycleDelegate->AddNotification("secondscreen.onLaunchRequest", emitter);
-
-    EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("secondscreen.onLaunchRequest"), _, _))
-        .Times(::testing::AtLeast(1));
-
-    // Transition to ACTIVE — triggers DispatchLastKnownIntent → secondscreen.onLaunchRequest
-    capturedNotification->OnAppLifecycleStateChanged(
-        "test.app", "instance-ss-001",
-        Exchange::ILifecycleManager::INITIALIZING,
-        Exchange::ILifecycleManager::ACTIVE,
-        ""
-    );
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-}
-
-/* ================================================================
  * Gap 5 – Presentation.onFocusedChanged subscription path
  *
  * Verifies that the event name is accepted by HandleEvent and
@@ -1106,6 +1155,8 @@ TEST_F(LifecycleDelegateTest, AGC_L1_205_ActionsIntent_NoStoredIntent_ReturnsZer
     // intentId is serialized as a JSON number; check for "intentId":0 (numeric, not quoted string)
     EXPECT_NE(result.find("intentId"), std::string::npos);
     EXPECT_NE(result.find("\"intentId\":0"), std::string::npos);
+    // When no intent is stored, intent must be an empty JSON object, not an empty string
+    EXPECT_NE(result.find("\"intent\":{}"), std::string::npos);
 }
 
 TEST_F(LifecycleDelegateTest, AGC_L1_206_ActionsOnIntent_SubscribeUnsubscribe)
@@ -1127,7 +1178,7 @@ TEST_F(LifecycleDelegateTest, AGC_L1_206_ActionsOnIntent_SubscribeUnsubscribe)
     EXPECT_TRUE(status);
 }
 
-TEST_F(LifecycleDelegateTest, AGC_L1_207_ActionsOnIntent_EmittedOnActiveTransition)
+TEST_F(LifecycleDelegateTest, AGC_L1_207_ActionsOnIntent_EmittedWhenIntentUpdatedOnActiveTransition)
 {
     ASSERT_NE(capturedNotification, nullptr);
 
@@ -1150,9 +1201,39 @@ TEST_F(LifecycleDelegateTest, AGC_L1_207_ActionsOnIntent_EmittedOnActiveTransiti
     EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("Actions.onIntent"), _, _))
         .Times(::testing::AtLeast(1));
 
-    // Transition to ACTIVE — should fire DispatchLastKnownIntent → Actions.onIntent
+    // Transition to ACTIVE with an updated intent should fire DispatchLastKnownIntent → Actions.onIntent
     capturedNotification->OnAppLifecycleStateChanged(
         "test.app", "instance-ev-001",
+        Exchange::ILifecycleManager::INITIALIZING,
+        Exchange::ILifecycleManager::ACTIVE,
+        "{\"action\":\"browse\"}"
+    );
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+}
+
+TEST_F(LifecycleDelegateTest, AGC_L1_207a_ActionsOnIntent_NotEmittedWhenIntentNotUpdated)
+{
+    ASSERT_NE(capturedNotification, nullptr);
+
+    capturedNotification->OnAppLifecycleStateChanged(
+        "test.app", "instance-ev-002",
+        Exchange::ILifecycleManager::UNLOADED,
+        Exchange::ILifecycleManager::INITIALIZING,
+        "{\"action\":\"search\"}"
+    );
+
+    auto lifecycleDelegate = plugin.mDelegate->getLifecycleDelegate();
+    ASSERT_NE(lifecycleDelegate, nullptr);
+    MockEmitter* emitter = new MockEmitter();
+    heapEmitters.push_back(emitter);
+    emitter->AddRef();
+    lifecycleDelegate->AddNotification("Actions.onIntent", emitter);
+
+    EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("Actions.onIntent"), _, _)).Times(0);
+
+    capturedNotification->OnAppLifecycleStateChanged(
+        "test.app", "instance-ev-002",
         Exchange::ILifecycleManager::INITIALIZING,
         Exchange::ILifecycleManager::ACTIVE,
         ""
@@ -1492,6 +1573,64 @@ TEST_F(LifecycleDelegateTest, AGC_L1_215_MultipleHibernationCycles_CorrectGuardC
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     lifecycleDelegate->SetSessionGuard(nullptr);
+}
+
+/* ================================================================
+ * AGC_L1_233–235: null/empty intent validation in ActionsStart and
+ * lifecycle notification path.
+ * ================================================================ */
+
+TEST_F(LifecycleDelegateTest, AGC_L1_233_ActionsStart_NullIntentField_ReturnsBadRequest)
+{
+    // {"intent":null} — the intent field is JSON null
+    const auto ctx = MakeContext("test.app");
+    string result;
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "actions.start", "{\"intent\":null}", result);
+
+    EXPECT_EQ(Core::ERROR_BAD_REQUEST, rc);
+}
+
+TEST_F(LifecycleDelegateTest, AGC_L1_234_ActionsStart_EmptyObjectIntentField_ReturnsBadRequest)
+{
+    // {"intent":{}} — the intent field is an empty JSON object
+    const auto ctx = MakeContext("test.app");
+    string result;
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "actions.start", "{\"intent\":{}}", result);
+
+    EXPECT_EQ(Core::ERROR_BAD_REQUEST, rc);
+}
+
+TEST_F(LifecycleDelegateTest, AGC_L1_235_LifecycleNotification_NullNavigationIntent_NotStored)
+{
+    // OnAppLifecycleStateChanged with navigationIntent="null" must not overwrite a stored intent.
+    ASSERT_NE(capturedNotification, nullptr);
+
+    // First store a valid intent via INITIALIZING
+    capturedNotification->OnAppLifecycleStateChanged(
+        "test.app", "instance-nullnav-001",
+        Exchange::ILifecycleManager::UNLOADED,
+        Exchange::ILifecycleManager::INITIALIZING,
+        "{\"action\":\"play\"}"
+    );
+
+    // Now fire ACTIVE with navigationIntent="null" — should be ignored
+    capturedNotification->OnAppLifecycleStateChanged(
+        "test.app", "instance-nullnav-001",
+        Exchange::ILifecycleManager::INITIALIZING,
+        Exchange::ILifecycleManager::ACTIVE,
+        "null"
+    );
+
+    // The original intent must still be retrievable
+    const auto ctx = MakeContext("test.app");
+    string result;
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "commoninternal.getlastintent", "{}", result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    // Original intent is still there
+    EXPECT_NE(result.find("\"action\":\"play\""), std::string::npos);
+    // The literal string "null" must not appear as the intent value
+    EXPECT_EQ(result.find("\"intent\":\"null\""), std::string::npos);
 }
 
 } // namespace

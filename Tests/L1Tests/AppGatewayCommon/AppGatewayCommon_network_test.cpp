@@ -87,6 +87,26 @@ static Exchange::GatewayContext MakeContext()
     return ctx;
 }
 
+// Sets up one GetAvailableInterfaces() call to return exactly `ifaces`, in order.
+// Call once per expected invocation.
+void ExpectAvailableInterfaces(NiceMock<MockINetworkManager>& mockNetwork,
+                               std::vector<Exchange::INetworkManager::InterfaceDetails> ifaces)
+{
+    auto* mockIterator = new NiceMock<MockInterfaceDetailsIterator>();
+    auto remaining = std::make_shared<std::vector<Exchange::INetworkManager::InterfaceDetails>>(std::move(ifaces));
+    EXPECT_CALL(*mockIterator, Next(_))
+        .WillRepeatedly(::testing::Invoke([remaining](Exchange::INetworkManager::InterfaceDetails& out) {
+            if (remaining->empty()) return false;
+            out = remaining->front();
+            remaining->erase(remaining->begin());
+            return true;
+        }));
+    EXPECT_CALL(*mockIterator, Release())
+        .WillOnce(::testing::Invoke([mockIterator]() { delete mockIterator; return 0; }));
+    EXPECT_CALL(mockNetwork, GetAvailableInterfaces(_))
+        .WillOnce(DoAll(SetArgReferee<0>(mockIterator), Return(Core::ERROR_NONE)));
+}
+
 class NetworkDelegateTest : public ::testing::Test {
 protected:
     static Core::Sink<AppGatewayCommon>* sPlugin;
@@ -146,10 +166,13 @@ NiceMock<MockINetworkManager>* NetworkDelegateTest::sMockNetwork = nullptr;
 
 /* ---------- GetNetworkConnected ---------- */
 
-TEST_F(NetworkDelegateTest, AGC_L1_147_GetNetworkConnected_Connected)
+TEST_F(NetworkDelegateTest, AGC_L1_147_GetNetworkConnected_OneInterfaceConnected)
 {
-    EXPECT_CALL(mockNetwork, GetPrimaryInterface(_))
-        .WillOnce(DoAll(SetArgReferee<0>("eth0"), Return(Core::ERROR_NONE)));
+    Exchange::INetworkManager::InterfaceDetails eth;
+    eth.type = Exchange::INetworkManager::INTERFACE_TYPE_ETHERNET;
+    eth.name = "eth0";
+    eth.connected = true;
+    ExpectAvailableInterfaces(mockNetwork, {eth});
 
     const auto ctx = MakeContext();
     string result;
@@ -159,10 +182,54 @@ TEST_F(NetworkDelegateTest, AGC_L1_147_GetNetworkConnected_Connected)
     EXPECT_EQ("true", result);
 }
 
-TEST_F(NetworkDelegateTest, AGC_L1_148_GetNetworkConnected_Disconnected)
+TEST_F(NetworkDelegateTest, AGC_L1_147b_GetNetworkConnected_OneOfMultipleInterfacesConnected)
 {
-    EXPECT_CALL(mockNetwork, GetPrimaryInterface(_))
-        .WillOnce(DoAll(SetArgReferee<0>(""), Return(Core::ERROR_NONE)));
+    // The core "any interface" case: eth0 is down, wlan0 is up -- overall still true.
+    Exchange::INetworkManager::InterfaceDetails eth;
+    eth.type = Exchange::INetworkManager::INTERFACE_TYPE_ETHERNET;
+    eth.name = "eth0";
+    eth.connected = false;
+
+    Exchange::INetworkManager::InterfaceDetails wifi;
+    wifi.type = Exchange::INetworkManager::INTERFACE_TYPE_WIFI;
+    wifi.name = "wlan0";
+    wifi.connected = true;
+
+    ExpectAvailableInterfaces(mockNetwork, {eth, wifi});
+
+    const auto ctx = MakeContext();
+    string result;
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "network.connected", "{}", result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ("true", result);
+}
+
+TEST_F(NetworkDelegateTest, AGC_L1_147c_GetNetworkConnected_AllInterfacesDisconnected)
+{
+    Exchange::INetworkManager::InterfaceDetails eth;
+    eth.type = Exchange::INetworkManager::INTERFACE_TYPE_ETHERNET;
+    eth.name = "eth0";
+    eth.connected = false;
+
+    Exchange::INetworkManager::InterfaceDetails wifi;
+    wifi.type = Exchange::INetworkManager::INTERFACE_TYPE_WIFI;
+    wifi.name = "wlan0";
+    wifi.connected = false;
+
+    ExpectAvailableInterfaces(mockNetwork, {eth, wifi});
+
+    const auto ctx = MakeContext();
+    string result;
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "network.connected", "{}", result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ("false", result);
+}
+
+TEST_F(NetworkDelegateTest, AGC_L1_148_GetNetworkConnected_NoInterfacesAvailable)
+{
+    ExpectAvailableInterfaces(mockNetwork, {});
 
     const auto ctx = MakeContext();
     string result;
@@ -174,7 +241,7 @@ TEST_F(NetworkDelegateTest, AGC_L1_148_GetNetworkConnected_Disconnected)
 
 TEST_F(NetworkDelegateTest, AGC_L1_149_GetNetworkConnected_CallFails)
 {
-    EXPECT_CALL(mockNetwork, GetPrimaryInterface(_))
+    EXPECT_CALL(mockNetwork, GetAvailableInterfaces(_))
         .WillOnce(Return(Core::ERROR_GENERAL));
 
     const auto ctx = MakeContext();
@@ -182,6 +249,19 @@ TEST_F(NetworkDelegateTest, AGC_L1_149_GetNetworkConnected_CallFails)
     const auto rc = plugin.HandleAppGatewayRequest(ctx, "network.connected", "{}", result);
 
     EXPECT_EQ(Core::ERROR_GENERAL, rc);
+}
+
+TEST_F(NetworkDelegateTest, AGC_L1_149b_GetNetworkConnected_NullIterator)
+{
+    EXPECT_CALL(mockNetwork, GetAvailableInterfaces(_))
+        .WillOnce(DoAll(SetArgReferee<0>(nullptr), Return(Core::ERROR_NONE)));
+
+    const auto ctx = MakeContext();
+    string result;
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "network.connected", "{}", result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ("false", result);
 }
 
 /* ---------- GetInternetConnectionStatus ---------- */
@@ -291,19 +371,6 @@ TEST_F(NetworkDelegateTest, AGC_L1_154_GetInternetConnectionStatus_CallFails)
 }
 
 /* ---------- Additional network error paths ---------- */
-
-TEST_F(NetworkDelegateTest, AGC_L1_155_GetNetworkConnected_EmptyPrimaryInterface)
-{
-    EXPECT_CALL(mockNetwork, GetPrimaryInterface(_))
-        .WillOnce(DoAll(SetArgReferee<0>(string("")), Return(Core::ERROR_NONE)));
-
-    const auto ctx = MakeContext();
-    string result;
-    const auto rc = plugin.HandleAppGatewayRequest(ctx, "network.connected", "{}", result);
-
-    EXPECT_EQ(Core::ERROR_NONE, rc);
-    EXPECT_NE(result.find("false"), std::string::npos);
-}
 
 TEST_F(NetworkDelegateTest, AGC_L1_156_GetInternetConnectionStatus_BothEthernetAndWifi)
 {
@@ -475,23 +542,23 @@ TEST_F(NetworkNotificationTest, AGC_L1_159_NetworkSubscription_RegistersAndCaptu
     EXPECT_NE(capturedNotification, nullptr);
 }
 
-TEST_F(NetworkNotificationTest, AGC_L1_160_NetworkNotification_onActiveInterfaceChange_Dispatches)
+TEST_F(NetworkNotificationTest, AGC_L1_160_NetworkNotification_onActiveInterfaceChange_DoesNotDispatch)
 {
     MockEmitter* emitter = new MockEmitter();
     heapEmitters.push_back(emitter);
     emitter->AddRef();
 
-    // Subscribe to Network.onConnectedChanged
     bool status = false;
     plugin.HandleAppEventNotifier(emitter, "Network.onConnectedChanged", true, status);
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     ASSERT_NE(capturedNotification, nullptr);
 
-    // Fire onActiveInterfaceChange: empty current → disconnected
-    EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("Network.onConnectedChanged"), _, _)).Times(::testing::AtLeast(1));
-    capturedNotification->onActiveInterfaceChange("eth0", "");
+    // Which interface is primary no longer affects Network.connected -- guards against
+    // accidentally re-wiring this event to onActiveInterfaceChange again.
+    EXPECT_CALL(mockNetwork, GetAvailableInterfaces(_)).Times(0);
+    EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("Network.onConnectedChanged"), _, _)).Times(0);
+    capturedNotification->onActiveInterfaceChange("wlan0", "eth0");
 
-    // Give worker pool time to dispatch
     std::this_thread::sleep_for(std::chrono::milliseconds(25));
 }
 
@@ -513,6 +580,183 @@ TEST_F(NetworkNotificationTest, AGC_L1_161_NetworkNotification_onInternetStatusC
         Exchange::INetworkManager::INTERNET_FULLY_CONNECTED,
         "eth0"
     );
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+}
+
+TEST_F(NetworkNotificationTest, AGC_L1_162_NetworkNotification_onInterfaceStateChange_LinkDown_NoneConnected_DispatchesFalse)
+{
+    MockEmitter* emitter = new MockEmitter();
+    heapEmitters.push_back(emitter);
+    emitter->AddRef();
+
+    bool status = false;
+    plugin.HandleAppEventNotifier(emitter, "Network.onConnectedChanged", true, status);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    ASSERT_NE(capturedNotification, nullptr);
+
+    Exchange::INetworkManager::InterfaceDetails wifi;
+    wifi.type = Exchange::INetworkManager::INTERFACE_TYPE_WIFI;
+    wifi.name = "wlan0";
+    wifi.connected = false;
+    ExpectAvailableInterfaces(mockNetwork, {wifi});
+
+    // This is the regression case: a link-only flap, which onActiveInterfaceChange
+    // alone would never see.
+    EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("Network.onConnectedChanged"),
+                               ::testing::HasSubstr("\"value\":false"), _)).Times(1);
+    capturedNotification->onInterfaceStateChange(Exchange::INetworkManager::INTERFACE_LINK_DOWN, "wlan0");
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+}
+
+TEST_F(NetworkNotificationTest, AGC_L1_163_NetworkNotification_onInterfaceStateChange_LinkUp_DispatchesTrue)
+{
+    MockEmitter* emitter = new MockEmitter();
+    heapEmitters.push_back(emitter);
+    emitter->AddRef();
+
+    bool status = false;
+    plugin.HandleAppEventNotifier(emitter, "Network.onConnectedChanged", true, status);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    ASSERT_NE(capturedNotification, nullptr);
+
+    Exchange::INetworkManager::InterfaceDetails wifi;
+    wifi.type = Exchange::INetworkManager::INTERFACE_TYPE_WIFI;
+    wifi.name = "wlan0";
+    wifi.connected = true;
+    ExpectAvailableInterfaces(mockNetwork, {wifi});
+
+    EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("Network.onConnectedChanged"),
+                               ::testing::HasSubstr("\"value\":true"), _)).Times(1);
+    capturedNotification->onInterfaceStateChange(Exchange::INetworkManager::INTERFACE_LINK_UP, "wlan0");
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+}
+
+TEST_F(NetworkNotificationTest, AGC_L1_164_NetworkNotification_onInterfaceStateChange_OtherInterfaceStaysConnected_DispatchesTrue)
+{
+    MockEmitter* emitter = new MockEmitter();
+    heapEmitters.push_back(emitter);
+    emitter->AddRef();
+
+    bool status = false;
+    plugin.HandleAppEventNotifier(emitter, "Network.onConnectedChanged", true, status);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    ASSERT_NE(capturedNotification, nullptr);
+
+    // eth0 just went down, but wlan0 is still connected -- the aggregate must follow
+    // all interfaces, not just the one that changed.
+    Exchange::INetworkManager::InterfaceDetails eth;
+    eth.type = Exchange::INetworkManager::INTERFACE_TYPE_ETHERNET;
+    eth.name = "eth0";
+    eth.connected = false;
+
+    Exchange::INetworkManager::InterfaceDetails wifi;
+    wifi.type = Exchange::INetworkManager::INTERFACE_TYPE_WIFI;
+    wifi.name = "wlan0";
+    wifi.connected = true;
+
+    ExpectAvailableInterfaces(mockNetwork, {eth, wifi});
+
+    EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("Network.onConnectedChanged"),
+                               ::testing::HasSubstr("\"value\":true"), _)).Times(1);
+    capturedNotification->onInterfaceStateChange(Exchange::INetworkManager::INTERFACE_LINK_DOWN, "eth0");
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+}
+
+TEST_F(NetworkNotificationTest, AGC_L1_164b_NetworkNotification_onInterfaceStateChange_SecondaryInterfaceDown_AlreadyConnected_NoDispatch)
+{
+    MockEmitter* emitter = new MockEmitter();
+    heapEmitters.push_back(emitter);
+    emitter->AddRef();
+
+    bool status = false;
+    plugin.HandleAppEventNotifier(emitter, "Network.onConnectedChanged", true, status);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    ASSERT_NE(capturedNotification, nullptr);
+
+    Exchange::INetworkManager::InterfaceDetails eth;
+    eth.type = Exchange::INetworkManager::INTERFACE_TYPE_ETHERNET;
+    eth.name = "eth0";
+    eth.connected = true;
+
+    Exchange::INetworkManager::InterfaceDetails wifiUp;
+    wifiUp.type = Exchange::INetworkManager::INTERFACE_TYPE_WIFI;
+    wifiUp.name = "wlan0";
+    wifiUp.connected = true;
+
+    Exchange::INetworkManager::InterfaceDetails wifiDown = wifiUp;
+    wifiDown.connected = false;
+
+    // Establish a known baseline of Network.connected == true first.
+    ExpectAvailableInterfaces(mockNetwork, {eth, wifiUp});
+
+    // Only the baseline-establishing dispatch below should ever fire. wlan0 going
+    // down afterwards must not re-dispatch: eth0 keeps the getter's answer at
+    // true both before and after, so nothing the getter reports has changed.
+    EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("Network.onConnectedChanged"),
+                               ::testing::HasSubstr("\"value\":true"), _)).Times(1);
+    capturedNotification->onInterfaceStateChange(Exchange::INetworkManager::INTERFACE_LINK_UP, "eth0");
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+
+    ExpectAvailableInterfaces(mockNetwork, {eth, wifiDown});
+    capturedNotification->onInterfaceStateChange(Exchange::INetworkManager::INTERFACE_LINK_DOWN, "wlan0");
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+}
+
+TEST_F(NetworkNotificationTest, AGC_L1_165_NetworkNotification_onInterfaceStateChange_IrrelevantState_DoesNotDispatch)
+{
+    MockEmitter* emitter = new MockEmitter();
+    heapEmitters.push_back(emitter);
+    emitter->AddRef();
+
+    bool status = false;
+    plugin.HandleAppEventNotifier(emitter, "Network.onConnectedChanged", true, status);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    ASSERT_NE(capturedNotification, nullptr);
+
+    // INTERFACE_ACQUIRING_IP doesn't cleanly map to connected/disconnected; the handler
+    // should bail before even querying the available interfaces.
+    EXPECT_CALL(mockNetwork, GetAvailableInterfaces(_)).Times(0);
+    EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("Network.onConnectedChanged"), _, _)).Times(0);
+    capturedNotification->onInterfaceStateChange(Exchange::INetworkManager::INTERFACE_ACQUIRING_IP, "wlan0");
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+}
+
+TEST_F(NetworkNotificationTest, AGC_L1_166_NetworkNotification_DuplicateValue_DispatchesOnce)
+{
+    MockEmitter* emitter = new MockEmitter();
+    heapEmitters.push_back(emitter);
+    emitter->AddRef();
+
+    bool status = false;
+    plugin.HandleAppEventNotifier(emitter, "Network.onConnectedChanged", true, status);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    ASSERT_NE(capturedNotification, nullptr);
+
+    // Two link-state events that both resolve to the same aggregate value must not
+    // re-dispatch the second time.
+    Exchange::INetworkManager::InterfaceDetails wifi;
+    wifi.type = Exchange::INetworkManager::INTERFACE_TYPE_WIFI;
+    wifi.name = "wlan0";
+    wifi.connected = false;
+
+    EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("Network.onConnectedChanged"),
+                               ::testing::HasSubstr("\"value\":false"), _)).Times(1);
+
+    // Only one ExpectAvailableInterfaces() is active at a time, same as AGC_L1_164b.
+    // Setting up both before either call fires leaves two WillOnce expectations live
+    // at once, which race under the worker pool and can leak a mock iterator.
+    ExpectAvailableInterfaces(mockNetwork, {wifi});
+    capturedNotification->onInterfaceStateChange(Exchange::INetworkManager::INTERFACE_LINK_DOWN, "wlan0");
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+
+    ExpectAvailableInterfaces(mockNetwork, {wifi});
+    capturedNotification->onInterfaceStateChange(Exchange::INetworkManager::INTERFACE_LINK_DOWN, "wlan0");
 
     std::this_thread::sleep_for(std::chrono::milliseconds(25));
 }

@@ -34,8 +34,7 @@
 #include "UtilsFirebolt.h"
 #include <atomic>
 #include <set>
-#include <map>
-#include <mutex>
+
 using namespace WPEFramework;
 
 #define LIFECYCLE_MANAGER_CALLSIGN "org.rdk.LifecycleManager"
@@ -52,8 +51,8 @@ static const std::set<string> VALID_LIFECYCLE_EVENT = {
     "lifecycle.onunloading",
     "lifecycle2.onstatechanged",
     "actions.onintent",
-    "presentation.onfocusedchanged",
-    "secondscreen.onlaunchrequest"  // DIAL launch event — fired by AppGatewayCommon via Dispatch()
+    "discovery.onnavigateto",
+    "presentation.onfocusedchanged"
 };
 
 class LifecycleDelegate : public BaseEventDelegate
@@ -269,6 +268,26 @@ class LifecycleDelegate : public BaseEventDelegate
         return Core::ERROR_NONE;
     }
 
+    Core::hresult SetIntent(const Exchange::GatewayContext& context, const string& payload /*@opaque */, string& result /*@out @opaque */) {
+        const string& navigationIntent = payload;
+        if (navigationIntent.empty() || navigationIntent == "null") {
+            result = "null";
+            return Core::ERROR_NONE;
+        }
+        string appInstanceId = mAppIdInstanceIdMap.GetAppInstanceId(context.appId);
+        if (appInstanceId.empty()) {
+             // On the LifecycleManagement path there is no separate appInstanceId, so appId is used as appInstanceId (identity mapping).
+             // On the AppManagers path, OnAppLifecycleStateChanged(INITIALIZING) may later overwrite this with the real appInstanceId,
+             // and any identity-mapped intent is discarded in favor of the INITIALIZING event's navigationIntent.
+            LOGINFO("SetIntent: bootstrapping identity mapping for appId=%s", context.appId.c_str());
+            mAppIdInstanceIdMap.AddAppInstanceId(context.appId, context.appId);
+            appInstanceId = context.appId;
+        }
+        mNavigationIntentRegistry.AddNavigationIntent(appInstanceId, navigationIntent);
+        result = "null";
+        return Core::ERROR_NONE;
+    }
+
     Core::hresult GetLastIntent(const Exchange::GatewayContext& context , const string& payload /*@opaque */, string& result /*@out @opaque */){
         string intent;
         uint32_t intentId = 0;
@@ -279,7 +298,7 @@ class LifecycleDelegate : public BaseEventDelegate
 
     Core::hresult ActionsStart(const Exchange::GatewayContext& context, const string& payload /*@opaque*/, string& result /*@out @opaque*/)
     {
-        if (payload.empty() || payload == "null") {
+        if (payload.empty() || "null" == payload) {
             LOGWARN("ActionsStart: intent payload is required");
             ErrorUtils::CustomBadRequest("Intent payload is required", result);
             return Core::ERROR_BAD_REQUEST;
@@ -296,9 +315,21 @@ class LifecycleDelegate : public BaseEventDelegate
             return Core::ERROR_BAD_REQUEST;
         }
 
-        // Re-serialize the intent sub-document as an opaque JSON string
+        // Validate and re-serialize the intent sub-document as an opaque JSON string.
+        // Reject JSON null (Variant::type::EMPTY) and empty objects ({}) as invalid.
+        const JsonValue& intentVariant = args.Get("intent");
+        if (intentVariant.Content() == JsonValue::type::EMPTY) {
+            LOGWARN("ActionsStart: 'intent' field must not be null");
+            ErrorUtils::CustomBadRequest("'intent' field must not be null or empty", result);
+            return Core::ERROR_BAD_REQUEST;
+        }
         string intent;
-        args.Get("intent").Object().ToString(intent);
+        intentVariant.Object().ToString(intent);
+        if (intent.empty() || intent == "{}" || "null" == intent) {
+            LOGWARN("ActionsStart: 'intent' field must not be an empty object");
+            ErrorUtils::CustomBadRequest("'intent' field must not be null or empty", result);
+            return Core::ERROR_BAD_REQUEST;
+        }
 
         // Extract optional handlerAppId
         string handlerAppId;
@@ -430,23 +461,40 @@ class LifecycleDelegate : public BaseEventDelegate
             LOGINFO("OnAppLifecycleStateChanged: appId=%s, appInstanceId=%s, oldState=%d, newState=%d, navigationIntent=%s",
                     appId.c_str(), appInstanceId.c_str(), oldLifecycleState, newLifecycleState, navigationIntent.c_str());
 
-            // Only update the registry when a non-empty intent is provided.
-            // An empty intent on subsequent transitions (e.g. ACTIVE) must not
+            // Only update the registry when a non-empty, non-null intent is provided.
+            // An empty or "null" intent on subsequent transitions (e.g. ACTIVE) must not
             // overwrite a previously stored intent (e.g. secondScreen set on INITIALIZING).
-            if (!navigationIntent.empty()) {
+            bool bIntentUpdated = false;
+            if (!navigationIntent.empty() && navigationIntent != "null") {
                 mParent.mNavigationIntentRegistry.AddNavigationIntent(appInstanceId, navigationIntent);
+                bIntentUpdated = true;
             }
 
             // if new Lifecycle state is INITIALIZING then add to app instance map
-            if (newLifecycleState == Exchange::ILifecycleManager::INITIALIZING) {
+            if (Exchange::ILifecycleManager::INITIALIZING == newLifecycleState) {
                 mParent.mAppIdInstanceIdMap.AddAppInstanceId(appId, appInstanceId);
                 // also add to lifecycle state registry
-                mParent.mLifecycleStateRegistry.AddLifecycleState(appInstanceId, oldLifecycleState, newLifecycleState);   
+                mParent.mLifecycleStateRegistry.AddLifecycleState(appInstanceId, oldLifecycleState, newLifecycleState);
+
+                // On the AppManagers path, the navigationIntent from the INITIALIZING event
+                // is the authoritative source of truth. Always discard any identity-mapped
+                // intent stored by SetIntent/HandleNewSession — never migrate it.
+                // The intent stored above (if navigationIntent was non-empty) under
+                // appInstanceId is what actions.intent will return.
+                if (appId != appInstanceId) {
+                    string identityIntent;
+                    uint32_t identityIntentId = 0;
+                    if (mParent.mNavigationIntentRegistry.GetNavigationIntent(appId, identityIntent, identityIntentId)) {
+                        LOGINFO("OnAppLifecycleStateChanged: discarding identity-mapped intent for appId=%s, INITIALIZING intent is authoritative",
+                                appId.c_str());
+                        mParent.mNavigationIntentRegistry.RemoveNavigationIntent(appId);
+                    }
+                }
             } 
 
             // handle lifecycle update
-            mParent.HandleLifecycleUpdate(appInstanceId, oldLifecycleState, newLifecycleState);            
-            
+            mParent.HandleLifecycleUpdate(appInstanceId, oldLifecycleState, newLifecycleState, bIntentUpdated);
+
         }
 
         BEGIN_INTERFACE_MAP(LifecycleNotificationHandler)
@@ -565,14 +613,16 @@ class LifecycleDelegate : public BaseEventDelegate
                 lifecycleStateMap.erase(appInstanceId);
             }
 
-            // Get json payload of current and previous state for a given appInstanceId
-            string GetLifecycle1StateJson(const string& appInstanceId) {
+            // Get json payload of current and previous state for a given appInstanceId.
+            // Optional stateOverride allows callers to force payload state (e.g. background on blur).
+            string GetLifecycle1StateJson(const string& appInstanceId, const string& stateOverride = "") {
                 std::lock_guard<std::mutex> lock(registryMutex);
-                if (lifecycleStateMap.find(appInstanceId) != lifecycleStateMap.end()) {
-                    LifecycleStateInfo& stateInfo = lifecycleStateMap[appInstanceId];
+                auto it = lifecycleStateMap.find(appInstanceId);
+                if (it != lifecycleStateMap.end()) {
+                    LifecycleStateInfo& stateInfo = it->second;
                     JsonObject object;
                     object["previous"] = Lifecycle2StateToLifecycle1String(stateInfo.previousState);
-                    object["state"] = Lifecycle2StateToLifecycle1String(stateInfo.currentState);
+                    object["state"] = stateOverride.empty() ? Lifecycle2StateToLifecycle1String(stateInfo.currentState) : stateOverride;
                     string jsonPayload;
                     object.ToString(jsonPayload);
                     return jsonPayload;
@@ -610,8 +660,8 @@ class LifecycleDelegate : public BaseEventDelegate
             };
 
             void AddNavigationIntent(const string& appInstanceId, const string& intent) {
-                if (true == intent.empty()) {
-                    return; // ignore empty intents; preserve the last non-empty intent and intentId
+                if (intent.empty() || "null" == intent) {
+                    return; // ignore empty/null intents; preserve the last non-empty intent and intentId
                 }
                 std::lock_guard<std::mutex> lock(intentMutex);
                 navigationIntentMap[appInstanceId] = { intent, ++mIntentIndex };
@@ -751,7 +801,7 @@ class LifecycleDelegate : public BaseEventDelegate
                  if (mFocusedAppRegistry.IsAppInstanceIdFocused(appInstanceId)) {
                     Dispatch("Lifecycle.onForeground", mLifecycleStateRegistry.GetLifecycle1StateJson(appInstanceId), mAppIdInstanceIdMap.GetAppId(appInstanceId));
                  } else {
-                    Dispatch("Lifecycle.onBackground", mLifecycleStateRegistry.GetLifecycle1StateJson(appInstanceId), mAppIdInstanceIdMap.GetAppId(appInstanceId));
+                          Dispatch("Lifecycle.onBackground", mLifecycleStateRegistry.GetLifecycle1StateJson(appInstanceId, "background"), mAppIdInstanceIdMap.GetAppId(appInstanceId));
                  }
                 break;
             default:
@@ -774,7 +824,7 @@ class LifecycleDelegate : public BaseEventDelegate
         // get if current app lifecycle is active
         if (mLifecycleStateRegistry.IsAppLifecycleActive(appInstanceId)) {
             mFocusedAppRegistry.ClearFocusedAppInstanceId();
-            Dispatch("Lifecycle.onBackground", mLifecycleStateRegistry.GetLifecycle1StateJson(appInstanceId), mAppIdInstanceIdMap.GetAppId(appInstanceId));
+            Dispatch("Lifecycle.onBackground", mLifecycleStateRegistry.GetLifecycle1StateJson(appInstanceId, "background"), mAppIdInstanceIdMap.GetAppId(appInstanceId));
         }
     }
 
@@ -808,48 +858,21 @@ class LifecycleDelegate : public BaseEventDelegate
         return mWindowManager;
     }
 
-    // Extract secondScreen JSON from the stored navigationIntent for a given appId.
-    // Returns true if a secondScreen object is present, false otherwise.
-    bool GetSecondScreenFromIntent(const string& appId, string& secondScreenJson)
-    {
-        secondScreenJson.clear();
-        string appInstanceId = mAppIdInstanceIdMap.GetAppInstanceId(appId);
-        if (appInstanceId.empty()) return false;
-
-        string navigationIntent;
-        uint32_t intentId = 0; 
-        mNavigationIntentRegistry.GetNavigationIntent(appInstanceId,navigationIntent,intentId);
-        if (navigationIntent.empty()) return false;
-
-        JsonObject intentObj;
-        if (!intentObj.FromString(navigationIntent)) return false;
-
-        if (intentObj.HasLabel("secondScreen") &&
-            intentObj["secondScreen"].Content() == JsonValue::type::OBJECT)
-        {
-            intentObj["secondScreen"].Object().ToString(secondScreenJson);
-            return !secondScreenJson.empty();
-        }
-        return false;
-    }
-
     // Dispatch last known intent for a given appId as Actions.onIntent event
     void DispatchLastKnownIntent(const string& appId)
     {
         string intent;
         uint32_t intentId = 0;
         GetLastKnownIntent(appId, intent, intentId);
-        if (!intent.empty()) {
+        if (!intent.empty() && intent != "null") {
             string payloadStr = BuildIntentResult(intentId, intent);
             Dispatch("Actions.onIntent", payloadStr, appId);
-        }
-
-        // Emit secondscreen.onLaunchRequest if DIAL payload present in navigationIntent
-        std::string secondScreenJson;
-        if (GetSecondScreenFromIntent(appId, secondScreenJson)) {
-            bool dispatched = Dispatch("secondscreen.onLaunchRequest", secondScreenJson, appId);
-            if (dispatched) {
-                LOGDBG("DispatchLastKnownIntent: Emitted secondscreen.onLaunchRequest for appId=%s", appId.c_str());
+            // Mirror LaunchDelegate behavior for apps still consuming Discovery.onNavigateTo.
+            JsonObject intentJson;
+            if (intentJson.FromString(intent)) {
+                string discoveryPayload;
+                intentJson.ToString(discoveryPayload);
+                Dispatch("Discovery.onNavigateTo", discoveryPayload, appId);
             }
         }
     }
@@ -862,7 +885,10 @@ class LifecycleDelegate : public BaseEventDelegate
     static string BuildIntentResult(uint32_t intentId, const string& intent)
     {
         string intentJson;
-        if (!intent.empty() && (intent[0] == '{' || intent[0] == '[')) {
+        if (intent.empty() || "null" == intent) {
+            // No intent available – represent as an empty JSON object
+            intentJson = "{}";
+        } else if (intent[0] == '{' || intent[0] == '[') {
             // Intent is already a JSON object/array – embed verbatim
             intentJson = intent;
         } else {
@@ -888,7 +914,7 @@ class LifecycleDelegate : public BaseEventDelegate
         if (!appInstanceId.empty()) {
             mNavigationIntentRegistry.GetNavigationIntent(appInstanceId, intent, intentId);
         } else {
-            LOGERR("Failed to get AppInstanceId for Appid: %s", appId.c_str());
+            LOGWARN("AppInstanceId not found for Appid: %s", appId.c_str());
         }
     }
 
@@ -929,7 +955,10 @@ class LifecycleDelegate : public BaseEventDelegate
     }
 
     // Handle Lifecycle update for a given appInstanceId by accepting the previous and current lifecycle state
-    void HandleLifecycleUpdate(const string& appInstanceId,  const Exchange::ILifecycleManager::LifecycleState oldLifecycleState, const Exchange::ILifecycleManager::LifecycleState newLifecycleState)
+    void HandleLifecycleUpdate(const string& appInstanceId,
+                               const Exchange::ILifecycleManager::LifecycleState oldLifecycleState,
+                               const Exchange::ILifecycleManager::LifecycleState newLifecycleState,
+                               const bool bIntentUpdated = true)
     {
         LOGINFO("HandleLifecycleUpdate: appInstanceId=%s, oldState=%d, newState=%d", appInstanceId.c_str(), oldLifecycleState, newLifecycleState);
         // update lifecycle state registry
@@ -937,6 +966,10 @@ class LifecycleDelegate : public BaseEventDelegate
 
         // get appId from appInstanceId
         string appId = mAppIdInstanceIdMap.GetAppId(appInstanceId);
+        if (appId.empty()) {
+            LOGWARN("HandleLifecycleUpdate: No appId found for appInstanceId=%s, skipping dispatch", appInstanceId.c_str());
+            return;
+        }
 
         // Lifecycle 2 only: manage WebSocket traffic gate around hibernation.
         //
@@ -981,8 +1014,11 @@ class LifecycleDelegate : public BaseEventDelegate
             guardRef = nullptr;
         }
 
-        // if new lifecycleState is ACTIVE trigger last known intent
-        if (newLifecycleState == Exchange::ILifecycleManager::ACTIVE) {
+        // Background / Context: DispatchLastKnownIntent reads app specific intent from from mNavigationIntentRegistry
+        // and emits Actions.onIntent.
+        // Dispatch the intent only when this lifecycle update supplied a new navigation intent
+        // that was stored in the registry.
+        if (bIntentUpdated) {
             DispatchLastKnownIntent(appId);
         }
 

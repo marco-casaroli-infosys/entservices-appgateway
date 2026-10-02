@@ -42,9 +42,9 @@ public:
     // Why no self-delete:  some tests allocate MockEmitter on the stack via
     // Core::Sink<MockEmitter>.  Self-deleting a stack object is undefined
     // behaviour.  By omitting self-delete we keep both usage patterns safe.
-    void AddRef() const override
+    uint32_t AddRef() const override
     {
-        _refCount.fetch_add(1, std::memory_order_relaxed);
+        return _refCount.fetch_add(1, std::memory_order_relaxed) + 1;
     }
 
     uint32_t Release() const override

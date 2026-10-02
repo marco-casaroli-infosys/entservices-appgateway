@@ -20,7 +20,6 @@
 #include "AppGatewayCommon.h"
 #include <interfaces/IConfiguration.h>
 #include "StringUtils.h"
-#include "UtilsFirebolt.h"
 #include "UtilsAppGatewayTelemetry.h"
 #include "UtilsJsonValidation.h"
 #include "ContextUtils.h"
@@ -209,6 +208,39 @@ namespace Plugin {
         { "device.audio", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
             return self->GetAudio(result);
         }},
+        { "videooutput.resolution", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
+            return self->GetVideoOutputResolution(result);
+        }},
+        { "videooutput.hdcp", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
+            return self->GetVideoOutputHdcp(result);
+        }},
+        { "videooutput.cecstate", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
+            return self->GetVideoOutputCecActiveState(result);
+        }},
+        { "videooutput.port", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
+            return self->GetVideoOutputPort(result);
+        }},
+        { "videooutput.refreshrate", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
+            return self->GetVideoOutputRefreshRate(result);
+        }},
+        { "videooutput.colordepth", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
+            return self->GetVideoOutputColorDepth(result);
+        }},
+        { "videooutput.colorformat", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
+            return self->GetVideoOutputColorFormat(result);
+        }},
+        { "videooutput.colorimetry", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
+            return self->GetVideoOutputColorimetry(result);
+        }},
+        { "videooutput.dynamicrange", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
+            return self->GetVideoOutputDynamicRange(result);
+        }},
+        { "videooutput.quantizationrange", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
+            return self->GetVideoOutputQuantizationRange(result);
+        }},
+        { "device.dolbyatmosexperienceavailable", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
+            return self->GetDolbyAtmosExperience(result);
+        }},
         { "voiceguidance.navigationhints", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
             return self->GetVoiceGuidanceHints(result);
         }},
@@ -246,7 +278,7 @@ namespace Plugin {
             return self->GetPresentationLanguage(result);
         }},
         { "localization.presentationlanguage", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
-            return self->GetPresentationLanguage(result);
+            return self->GetLocale(result);
         }},
         { "localization.locale", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
             return self->GetLocale(result);
@@ -284,6 +316,9 @@ namespace Plugin {
         { "commoninternal.getlastintent", [](AppGatewayCommon* self, const Exchange::GatewayContext& ctx, const std::string& payload, std::string& result) {
             return self->GetLastIntent(ctx,payload,result);
         }},
+        { "commoninternal.setintent", [](AppGatewayCommon* self, const Exchange::GatewayContext& ctx, const std::string& payload, std::string& result) {
+            return self->SetIntent(ctx, payload, result);
+        }},
         {"advertising.advertisingid", [](AppGatewayCommon* self, const Exchange::GatewayContext& ctx, const std::string& payload, std::string& result) {
             return self->HandleAppDelegateRequest(ctx, "advertising.advertisingid", payload, result);
         }},
@@ -298,6 +333,21 @@ namespace Plugin {
         {"network.connected", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
             return self->GetNetworkConnected(result);
         }},
+        { "speechsynthesis.voices", [](AppGatewayCommon* self, const Exchange::GatewayContext& ctx, const std::string& payload, std::string& result) {
+            return self->SpeechSynthesisVoices(ctx, payload, result);
+        }},
+        { "speechsynthesis.speak", [](AppGatewayCommon* self, const Exchange::GatewayContext& ctx, const std::string& payload, std::string& result) {
+            return self->SpeechSynthesisSpeak(ctx, payload, result);
+        }},
+        { "speechsynthesis.cancel", [](AppGatewayCommon* self, const Exchange::GatewayContext& ctx, const std::string& payload, std::string& result) {
+            return self->SpeechSynthesisCancel(ctx, payload, result);
+        }},
+        { "speechsynthesis.pause", [](AppGatewayCommon* self, const Exchange::GatewayContext& ctx, const std::string& payload, std::string& result) {
+            return self->SpeechSynthesisPause(ctx, payload, result);
+        }},
+        { "speechsynthesis.resume", [](AppGatewayCommon* self, const Exchange::GatewayContext& ctx, const std::string& payload, std::string& result) {
+            return self->SpeechSynthesisResume(ctx, payload, result);
+        }},
         { "device.chipsetid", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
             return self->GetDeviceChipsetId(result);
         }},
@@ -309,6 +359,32 @@ namespace Plugin {
         }},
         { "device.timeinactivestate", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
             return self->GetDeviceTimeInActiveState(result);
+        }},
+        // Device Branding APIs (Phase 1)
+        { "device.setosname", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string& payload, std::string& result) -> Core::hresult {
+            std::string osName;
+            if (JsonValidation::ValidateAndExtractString(payload, osName)) {
+                return ResponseUtils::SetNullResponseForSuccess(self->SetDeviceOsName(osName), result);
+            }
+            result = "{\"error\":\"Invalid payload: missing or invalid 'value' field\"}";
+            return Core::ERROR_BAD_REQUEST;
+        }},
+        { "device.osname", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
+            return self->GetDeviceOsName(result);
+        }},
+        { "device.setosversion", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string& payload, std::string& result) -> Core::hresult {
+            std::string osVersion;
+            if (JsonValidation::ValidateAndExtractString(payload, osVersion)) {
+                return ResponseUtils::SetNullResponseForSuccess(self->SetDeviceOsVersion(osVersion), result);
+            }
+            result = "{\"error\":\"Invalid payload: missing or invalid 'value' field\"}";
+            return Core::ERROR_BAD_REQUEST;
+        }},
+        { "device.osversion", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
+            return self->GetDeviceOsVersion(result);
+        }},
+        { "device.firmware", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
+            return self->GetDeviceFirmware(result);
         }},
         { "stats.memoryusage", [](AppGatewayCommon* self, const Exchange::GatewayContext& ctx, const std::string&, std::string& result) {
             return self->GetStatsMemoryUsage(ctx.appId, result);
@@ -330,6 +406,18 @@ namespace Plugin {
         }},
         {"presentation.focused", [](AppGatewayCommon* self, const Exchange::GatewayContext& ctx, const std::string& payload, std::string& result) {
             return self->GetPresentationFocused(ctx, payload, result);
+        }},
+        { "parentalcontrol.pincontrol", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
+            return self->GetPinControl(result);
+        }},
+        { "parentalcontrol.blocknotratedcontent", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
+            return self->GetBlockNotRatedContent(result);
+        }},
+        { "parentalcontrol.viewingrestrictions", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
+            return self->GetViewingRestrictions(result);
+        }},
+        {"texttospeech.speak", [](AppGatewayCommon* self, const Exchange::GatewayContext& ctx, const std::string& payload, std::string& result) {
+            return self->TextToSpeechSpeak(ctx, payload, result);
         }}
     };
 
@@ -481,6 +569,47 @@ namespace Plugin {
             LOGERR("Unsupported method: %s", method.c_str());
             return Core::ERROR_UNKNOWN_KEY;
         }
+
+Core::hresult AppGatewayCommon::SpeechSynthesisVoices(const Exchange::GatewayContext&, const std::string& payload, std::string& result)
+{
+    result = "[]";
+    if (!mDelegate) { ErrorUtils::NotAvailable(result); return Core::ERROR_UNAVAILABLE; }
+    auto ttsDelegate = mDelegate->getTTSDelegate();
+    if (!ttsDelegate) { ErrorUtils::NotAvailable(result); return Core::ERROR_UNAVAILABLE; }
+    return ttsDelegate->SpeechSynthesisVoices(payload, result);
+}
+
+Core::hresult AppGatewayCommon::SpeechSynthesisSpeak(const Exchange::GatewayContext& ctx, const std::string& payload, std::string& result)
+{
+    if (!mDelegate) { ErrorUtils::NotAvailable(result); return Core::ERROR_UNAVAILABLE; }
+    auto ttsDelegate = mDelegate->getTTSDelegate();
+    if (!ttsDelegate) { ErrorUtils::NotAvailable(result); return Core::ERROR_UNAVAILABLE; }
+    return ttsDelegate->SpeechSynthesisSpeak(ctx.appId, payload, result);
+}
+
+    Core::hresult AppGatewayCommon::SpeechSynthesisCancel(const Exchange::GatewayContext&, const std::string& payload, std::string& result)
+    {
+        if (!mDelegate) return Core::ERROR_UNAVAILABLE;
+        auto ttsDelegate = mDelegate->getTTSDelegate();
+        if (!ttsDelegate) return Core::ERROR_UNAVAILABLE;
+        return ttsDelegate->SpeechSynthesisCancel(payload, result);
+    }
+
+    Core::hresult AppGatewayCommon::SpeechSynthesisPause(const Exchange::GatewayContext&, const std::string& payload, std::string& result)
+    {
+        if (!mDelegate) return Core::ERROR_UNAVAILABLE;
+        auto ttsDelegate = mDelegate->getTTSDelegate();
+        if (!ttsDelegate) return Core::ERROR_UNAVAILABLE;
+        return ttsDelegate->SpeechSynthesisPause(payload, result);
+    }
+
+    Core::hresult AppGatewayCommon::SpeechSynthesisResume(const Exchange::GatewayContext&, const std::string& payload, std::string& result)
+    {
+        if (!mDelegate) return Core::ERROR_UNAVAILABLE;
+        auto ttsDelegate = mDelegate->getTTSDelegate();
+        if (!ttsDelegate) return Core::ERROR_UNAVAILABLE;
+        return ttsDelegate->SpeechSynthesisResume(payload, result);
+    }
     
     Core::hresult AppGatewayCommon::SetName(const string &value /* @in */, string &result)
         {
@@ -1176,6 +1305,125 @@ namespace Plugin {
             return systemDelegate->GetAudio(result);
         }
 
+        // ─── VideoOutput API wrappers ─────────────────────────────────────
+
+        Core::hresult AppGatewayCommon::GetVideoOutputResolution(string &result)
+        {
+            LOGINFO("GetVideoOutputResolution AppGatewayCommon");
+            result = "{\"width\":0,\"height\":0}";
+            if (nullptr == mDelegate) return Core::ERROR_UNAVAILABLE;
+            auto videoOutputDelegate = mDelegate->getVideoOutputDelegate();
+            if (nullptr == videoOutputDelegate) return Core::ERROR_UNAVAILABLE;
+            return videoOutputDelegate->GetVideoOutputResolution(result);
+        }
+
+        Core::hresult AppGatewayCommon::GetVideoOutputHdcp(string &result)
+        {
+            LOGINFO("GetVideoOutputHdcp AppGatewayCommon");
+            result = "\"none\"";
+            if (nullptr == mDelegate) return Core::ERROR_UNAVAILABLE;
+            auto videoOutputDelegate = mDelegate->getVideoOutputDelegate();
+            if (nullptr == videoOutputDelegate) return Core::ERROR_UNAVAILABLE;
+            return videoOutputDelegate->GetVideoOutputHdcp(result);
+        }
+
+        Core::hresult AppGatewayCommon::GetVideoOutputCecActiveState(string &result)
+        {
+            LOGINFO("GetVideoOutputCecActiveState AppGatewayCommon");
+            result = "\"unsupported\"";
+            if (nullptr == mDelegate) return Core::ERROR_UNAVAILABLE;
+            auto videoOutputDelegate = mDelegate->getVideoOutputDelegate();
+            if (nullptr == videoOutputDelegate) return Core::ERROR_UNAVAILABLE;
+            return videoOutputDelegate->GetVideoOutputCecActiveState(result);
+        }
+
+        Core::hresult AppGatewayCommon::GetVideoOutputPort(string &result)
+        {
+            LOGINFO("GetVideoOutputPort AppGatewayCommon");
+            result = "\"none\"";
+            if (nullptr == mDelegate) return Core::ERROR_UNAVAILABLE;
+            auto videoOutputDelegate = mDelegate->getVideoOutputDelegate();
+            if (nullptr == videoOutputDelegate) return Core::ERROR_UNAVAILABLE;
+            return videoOutputDelegate->GetVideoOutputPort(result);
+        }
+
+        Core::hresult AppGatewayCommon::GetVideoOutputRefreshRate(string &result)
+        {
+            LOGINFO("GetVideoOutputRefreshRate AppGatewayCommon");
+            result = "0";
+            if (nullptr == mDelegate) return Core::ERROR_UNAVAILABLE;
+            auto videoOutputDelegate = mDelegate->getVideoOutputDelegate();
+            if (nullptr == videoOutputDelegate) return Core::ERROR_UNAVAILABLE;
+            return videoOutputDelegate->GetVideoOutputRefreshRate(result);
+        }
+
+        Core::hresult AppGatewayCommon::GetVideoOutputColorDepth(string &result)
+        {
+            LOGINFO("GetVideoOutputColorDepth AppGatewayCommon");
+            result = "0";
+            if (nullptr == mDelegate) return Core::ERROR_UNAVAILABLE;
+            auto videoOutputDelegate = mDelegate->getVideoOutputDelegate();
+            if (nullptr == videoOutputDelegate) return Core::ERROR_UNAVAILABLE;
+            return videoOutputDelegate->GetVideoOutputColorDepth(result);
+        }
+
+        Core::hresult AppGatewayCommon::GetVideoOutputColorFormat(string &result)
+        {
+            LOGINFO("GetVideoOutputColorFormat AppGatewayCommon");
+            result = "\"none\"";
+            if (nullptr == mDelegate) return Core::ERROR_UNAVAILABLE;
+            auto videoOutputDelegate = mDelegate->getVideoOutputDelegate();
+            if (nullptr == videoOutputDelegate) return Core::ERROR_UNAVAILABLE;
+            return videoOutputDelegate->GetVideoOutputColorFormat(result);
+        }
+
+        Core::hresult AppGatewayCommon::GetVideoOutputColorimetry(string &result)
+        {
+            LOGINFO("GetVideoOutputColorimetry AppGatewayCommon");
+            result = "\"none\"";
+            if (nullptr == mDelegate) return Core::ERROR_UNAVAILABLE;
+            auto videoOutputDelegate = mDelegate->getVideoOutputDelegate();
+            if (nullptr == videoOutputDelegate) return Core::ERROR_UNAVAILABLE;
+            return videoOutputDelegate->GetVideoOutputColorimetry(result);
+        }
+
+        Core::hresult AppGatewayCommon::GetVideoOutputDynamicRange(string &result)
+        {
+            LOGINFO("GetVideoOutputDynamicRange AppGatewayCommon");
+            result = "\"none\"";
+            if (nullptr == mDelegate) return Core::ERROR_UNAVAILABLE;
+            auto videoOutputDelegate = mDelegate->getVideoOutputDelegate();
+            if (nullptr == videoOutputDelegate) return Core::ERROR_UNAVAILABLE;
+            return videoOutputDelegate->GetVideoOutputDynamicRange(result);
+        }
+
+        Core::hresult AppGatewayCommon::GetVideoOutputQuantizationRange(string &result)
+        {
+            LOGINFO("GetVideoOutputQuantizationRange AppGatewayCommon");
+            result = "\"none\"";
+            if (nullptr == mDelegate) return Core::ERROR_UNAVAILABLE;
+            auto videoOutputDelegate = mDelegate->getVideoOutputDelegate();
+            if (nullptr == videoOutputDelegate) return Core::ERROR_UNAVAILABLE;
+            return videoOutputDelegate->GetVideoOutputQuantizationRange(result);
+        }
+
+        Core::hresult AppGatewayCommon::GetDolbyAtmosExperience(string &result)
+        {
+            LOGINFO("GetDolbyAtmosExperience AppGatewayCommon");
+            if (!mDelegate) {
+                result = "false";
+                return Core::ERROR_UNAVAILABLE;
+            }
+
+            auto avOutputDelegate = mDelegate->getAvOutputDelegate();
+            if (!avOutputDelegate) {
+                result = "false";
+                return Core::ERROR_UNAVAILABLE;
+            }
+
+            return avOutputDelegate->GetDolbyAtmosExperience(result);
+        }
+
         template <typename DelegateType, typename LifecycleType, typename Func, typename... Args>
         Core::hresult InvokeLifecycleDelegate(const std::shared_ptr<DelegateType>& delegate,
                                             std::shared_ptr<LifecycleType> (DelegateType::*getLifecycleDelegate)() const,
@@ -1208,7 +1456,13 @@ namespace Plugin {
 
         Core::hresult AppGatewayCommon::LifecycleReady(const Exchange::GatewayContext& ctx, const std::string& payload, std::string& result)
         {
-            return InvokeLifecycleDelegate(mDelegate, &SettingsDelegate::getLifecycleDelegate, &LifecycleDelegate::LifecycleReady, ctx, payload, result);
+            Core::hresult hr = InvokeLifecycleDelegate(mDelegate, &SettingsDelegate::getLifecycleDelegate, &LifecycleDelegate::LifecycleReady, ctx, payload, result);
+            if (Core::ERROR_NONE == hr) {
+                // Telemetry: emit APP_READY_split marker
+                // CSV format: appId
+                AGW_REPORT_EVENT(ctx, AGW_MARKER_APP_READY, ctx.appId);
+            }
+            return hr;
         }
 
         Core::hresult AppGatewayCommon::LifecycleClose(const Exchange::GatewayContext& ctx, const std::string& payload, std::string& result)
@@ -1254,6 +1508,11 @@ namespace Plugin {
         Core::hresult AppGatewayCommon::GetPresentationFocused(const Exchange::GatewayContext& ctx, const std::string& payload, std::string& result)
         {
             return InvokeLifecycleDelegate(mDelegate, &SettingsDelegate::getLifecycleDelegate, &LifecycleDelegate::GetPresentationFocused, ctx, payload, result);
+        }
+
+        Core::hresult AppGatewayCommon::SetIntent(const Exchange::GatewayContext& ctx, const std::string& payload, std::string& result)
+        {
+            return InvokeLifecycleDelegate(mDelegate, &SettingsDelegate::getLifecycleDelegate, &LifecycleDelegate::SetIntent, ctx, payload, result);
         }
 
         Core::hresult AppGatewayCommon::CheckPermissionGroup(const string &appId /* @in */, const string &permissionGroup /* @in */, bool &allowed /* @out */)
@@ -1316,6 +1575,47 @@ namespace Plugin {
             return systemDelegate->GetDeviceTimeInActiveState(result);
         }
 
+        // Device Branding APIs (Phase 1)
+        Core::hresult AppGatewayCommon::SetDeviceOsName(const string &osName)
+        {
+            if (!mDelegate) return Core::ERROR_UNAVAILABLE;
+            auto systemDelegate = mDelegate->getSystemDelegate();
+            if (!systemDelegate) return Core::ERROR_UNAVAILABLE;
+            return systemDelegate->SetDeviceOsName(osName);
+        }
+
+        Core::hresult AppGatewayCommon::GetDeviceOsName(string &result)
+        {
+            if (!mDelegate) return Core::ERROR_UNAVAILABLE;
+            auto systemDelegate = mDelegate->getSystemDelegate();
+            if (!systemDelegate) return Core::ERROR_UNAVAILABLE;
+            return systemDelegate->GetDeviceOsName(result);
+        }
+
+        Core::hresult AppGatewayCommon::SetDeviceOsVersion(const string &osVersion)
+        {
+            if (!mDelegate) return Core::ERROR_UNAVAILABLE;
+            auto systemDelegate = mDelegate->getSystemDelegate();
+            if (!systemDelegate) return Core::ERROR_UNAVAILABLE;
+            return systemDelegate->SetDeviceOsVersion(osVersion);
+        }
+
+        Core::hresult AppGatewayCommon::GetDeviceOsVersion(string &result)
+        {
+            if (!mDelegate) return Core::ERROR_UNAVAILABLE;
+            auto systemDelegate = mDelegate->getSystemDelegate();
+            if (!systemDelegate) return Core::ERROR_UNAVAILABLE;
+            return systemDelegate->GetDeviceOsVersion(result);
+        }
+
+        Core::hresult AppGatewayCommon::GetDeviceFirmware(string &result)
+        {
+            if (!mDelegate) return Core::ERROR_UNAVAILABLE;
+            auto systemDelegate = mDelegate->getSystemDelegate();
+            if (!systemDelegate) return Core::ERROR_UNAVAILABLE;
+            return systemDelegate->GetDeviceFirmware(result);
+        }
+
         Core::hresult AppGatewayCommon::GetStatsMemoryUsage(const string &appId, string &result)
         {
             if (!mDelegate) return Core::ERROR_UNAVAILABLE;
@@ -1360,6 +1660,54 @@ namespace Plugin {
             return systemDelegate->GetDisplayColorimetry(result);
         }
 
+        Core::hresult AppGatewayCommon::GetPinControl(string &result)
+        {
+            if (!mDelegate)
+            {
+                result = "{\"error\":\"couldn't get pin control state\"}";
+                return Core::ERROR_UNAVAILABLE;
+            }
+            auto userSettingsDelegate = mDelegate->getUserSettings();
+            if (!userSettingsDelegate)
+            {
+                result = "{\"error\":\"couldn't get pin control state\"}";
+                return Core::ERROR_UNAVAILABLE;
+            }
+            return userSettingsDelegate->GetPinControl(result);
+        }
+
+        Core::hresult AppGatewayCommon::GetBlockNotRatedContent(string &result)
+        {
+            if (!mDelegate)
+            {
+                result = "{\"error\":\"couldn't get block not rated content state\"}";
+                return Core::ERROR_UNAVAILABLE;
+            }
+            auto userSettingsDelegate = mDelegate->getUserSettings();
+            if (!userSettingsDelegate)
+            {
+                result = "{\"error\":\"couldn't get block not rated content state\"}";
+                return Core::ERROR_UNAVAILABLE;
+            }
+            return userSettingsDelegate->GetBlockNotRatedContent(result);
+        }
+
+        Core::hresult AppGatewayCommon::GetViewingRestrictions(string &result)
+        {
+            if (!mDelegate)
+            {
+                result = "{\"error\":\"couldn't get viewing restrictions\"}";
+                return Core::ERROR_UNAVAILABLE;
+            }
+            auto userSettingsDelegate = mDelegate->getUserSettings();
+            if (!userSettingsDelegate)
+            {
+                result = "{\"error\":\"couldn't get viewing restrictions\"}";
+                return Core::ERROR_UNAVAILABLE;
+            }
+            return userSettingsDelegate->GetViewingRestrictions(result);
+        }
+
         Core::hresult AppGatewayCommon::GetDisplayVideoResolutions(string &result)
         {
             result = "[]";
@@ -1367,6 +1715,15 @@ namespace Plugin {
             auto systemDelegate = mDelegate->getSystemDelegate();
             if (!systemDelegate) return Core::ERROR_UNAVAILABLE;
             return systemDelegate->GetDisplayVideoResolutions(result);
+        }
+
+        Core::hresult AppGatewayCommon::TextToSpeechSpeak(const Exchange::GatewayContext& ctx, const string& payload, string& result)
+        {
+            result = "{}";
+            if (!mDelegate) return Core::ERROR_UNAVAILABLE;
+            auto ttsDelegate = mDelegate->getTTSDelegate();
+            if (!ttsDelegate) return Core::ERROR_UNAVAILABLE;
+            return ttsDelegate->TextToSpeechSpeak(ctx, payload, result);
         }
 
 } // namespace Plugin

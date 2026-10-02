@@ -45,9 +45,7 @@ public:
         : _items(items), _index(0), _refCount(1) {}
     ~SimpleStringIterator() override = default;
 
-    void AddRef() const override {
-        ++_refCount;
-    }
+    uint32_t AddRef() const override { return ++_refCount; }
     uint32_t Release() const override {
         const uint32_t n = --_refCount;
         if (n == 0) {
@@ -146,17 +144,37 @@ static bool WriteTextFile(const std::string& path, const std::string& content) {
     return true;
 }
 
+// Sanitize an environment variable intended to be used as a file/directory
+// path. Rejects values that are null/empty, non-absolute, or contain "..".
+// Returns an empty string for any rejected value so callers fall back to
+// the compile-time derived path and the tainted data never reaches a
+// file-access function.
+static std::string SanitizeEnvPath(const char* envVal)
+{
+    if (envVal == nullptr || envVal[0] == '\0') {
+        return {};
+    }
+    const std::string val(envVal);
+    if (val[0] != '/') {
+        return {};
+    }
+    if (val.find("..") != std::string::npos) {
+        return {};
+    }
+    return val;
+}
+
 static std::string ComputeBaseResolutionsPathFromThisFile() {
     // Prefer env var if provided. It may point to either file or directory.
-    const char* env = std::getenv("APPGATEWAY_RESOLUTIONS_PATH");
-    if (env != nullptr && *env != '\0') {
+    const std::string env = SanitizeEnvPath(std::getenv("APPGATEWAY_RESOLUTIONS_PATH"));
+    if (!env.empty()) {
         struct stat st;
-        if (stat(env, &st) == 0) {
+        if (stat(env.c_str(), &st) == 0) {
             if (S_ISREG(st.st_mode)) {
-                return std::string(env);
+                return env;
             }
             if (S_ISDIR(st.st_mode)) {
-                return std::string(env) + "/resolution.base.json";
+                return env + "/resolution.base.json";
             }
         }
     }
@@ -576,5 +594,56 @@ uint32_t Test_Resolver_LookupMissingKey()
     std::string pgroup;
     ExpectTrue(tr, !r.HasPermissionGroup(missing, pgroup), "HasPermissionGroup returns false for unknown key");
 
+    return tr.failures;
+}
+
+// Covers: Resolver::HasEventHook() — both present and absent cases
+uint32_t Test_Resolver_HasEventHook_PresentAndAbsent()
+{
+    using WPEFramework::Plugin::Resolver;
+    TestResult tr;
+
+    const std::string configPath = "/tmp/agw_l0test_eventhook.json";
+    const std::string configJson = R"JSON(
+{
+  "resolutions": {
+    "lifecycle2.onstatechanged": {
+      "alias": "org.rdk.AppGatewayCommon",
+      "event": "Lifecycle2.onStateChanged",
+      "eventHook": "lifecycle.ready"
+    },
+    "localization.onlanguagechanged": {
+      "alias": "org.rdk.AppGatewayCommon",
+      "event": "Localization.onLanguageChanged"
+    }
+  }
+}
+)JSON";
+
+    ExpectTrue(tr, WriteTextFile(configPath, configJson), "Write eventHook config JSON");
+
+    Resolver r(nullptr);
+    const bool loaded = r.LoadConfig(configPath);
+    ExpectTrue(tr, loaded, "LoadConfig with eventHook field succeeds");
+
+    // Positive: key has eventHook configured
+    std::string hookMethod;
+    const bool hasHook = r.HasEventHook("lifecycle2.onstatechanged", hookMethod);
+    ExpectTrue(tr, hasHook, "HasEventHook returns true for key with eventHook");
+    ExpectTrue(tr, hookMethod == "lifecycle.ready",
+               "HasEventHook outputs expected hook method 'lifecycle.ready'");
+
+    // Negative: key exists but has no eventHook field
+    std::string emptyHook;
+    const bool noHook = r.HasEventHook("localization.onlanguagechanged", emptyHook);
+    ExpectTrue(tr, !noHook, "HasEventHook returns false for key without eventHook");
+    ExpectTrue(tr, emptyHook.empty(), "hookMethod is empty when HasEventHook returns false");
+
+    // Negative: key does not exist at all
+    std::string missingHook;
+    ExpectTrue(tr, !r.HasEventHook("no.such.method", missingHook),
+               "HasEventHook returns false for unknown key");
+
+    ::unlink(configPath.c_str());
     return tr.failures;
 }

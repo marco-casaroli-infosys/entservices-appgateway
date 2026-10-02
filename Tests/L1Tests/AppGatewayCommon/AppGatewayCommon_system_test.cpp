@@ -19,7 +19,9 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <functional>
 #include <string>
+#include <unordered_map>
 
 #include "Module.h"
 
@@ -30,6 +32,7 @@
 #include "ServiceMock.h"
 #include "MockJSONRPCDirectLink.h"
 #include "MockEmitter.h"
+#include <interfaces/ISystemServices.h>
 #include "ThunderPortability.h"
 #include "WorkerPoolImplementation.h"
 
@@ -82,26 +85,269 @@ static Exchange::GatewayContext MakeContext()
     return ctx;
 }
 
+class MockSystemServicesDispatcher final : public Exchange::ISystemServices {
+public:
+    using Handler = std::function<uint32_t(const std::string&, const std::string&, std::string&)>;
+
+    void SetHandler(const std::string& method, Handler handler)
+    {
+        _handlers[method] = std::move(handler);
+    }
+
+    uint32_t AddRef() const override { return ++_refCount; }
+
+    uint32_t Release() const override
+    {
+        if (_refCount > 0) {
+            --_refCount;
+        }
+        return Core::ERROR_NONE;
+    }
+
+    void* QueryInterface(const uint32_t interfaceId) override
+    {
+        if ((interfaceId == Exchange::ISystemServices::ID) || (interfaceId == Core::IUnknown::ID)) {
+            return static_cast<Exchange::ISystemServices*>(this);
+        }
+        return nullptr;
+    }
+
+    Core::hresult Register(ISystemServices::INotification* notification) override
+    {
+        _notification = notification;
+        return Core::ERROR_NONE;
+    }
+
+    Core::hresult Unregister(ISystemServices::INotification* notification) override
+    {
+        if (_notification == notification) {
+            _notification = nullptr;
+        }
+        return Core::ERROR_NONE;
+    }
+
+    Core::hresult GetDeviceInfo(IStringIterator* const& params, DeviceInfo& deviceInfo /* @out */) override
+    {
+        (void)params;
+        Core::JSON::VariantContainer response;
+        const auto rc = ParseResponse("getDeviceInfo", "{}", response);
+        if (rc != Core::ERROR_NONE) {
+            return rc;
+        }
+        if (response.HasLabel(_T("make"))) {
+            deviceInfo.make = response[_T("make")].String();
+        }
+        deviceInfo.success = response.HasLabel(_T("success")) ? response[_T("success")].Boolean() : true;
+        return Core::ERROR_NONE;
+    }
+
+    Core::hresult GetFriendlyName(string& friendlyName /* @out */, bool& success /* @out */) override
+    {
+        Core::JSON::VariantContainer response;
+        const auto rc = ParseResponse("getFriendlyName", "{}", response);
+        if (rc != Core::ERROR_NONE) {
+            return rc;
+        }
+        if (response.HasLabel(_T("friendlyName"))) {
+            friendlyName = response[_T("friendlyName")].String();
+        }
+        success = response.HasLabel(_T("success")) ? response[_T("success")].Boolean() : true;
+        return Core::ERROR_NONE;
+    }
+
+    Core::hresult GetTerritory(string& territory /* @out */, string& region /* @out */, bool& success /* @out */) override
+    {
+        Core::JSON::VariantContainer response;
+        const auto rc = ParseResponse("getTerritory", "{}", response);
+        if (rc != Core::ERROR_NONE) {
+            return rc;
+        }
+        if (response.HasLabel(_T("territory"))) {
+            territory = response[_T("territory")].String();
+        }
+        if (response.HasLabel(_T("region"))) {
+            region = response[_T("region")].String();
+        }
+        success = response.HasLabel(_T("success")) ? response[_T("success")].Boolean() : true;
+        return Core::ERROR_NONE;
+    }
+
+    Core::hresult GetTimeZoneDST(string& timeZone /* @out */, string& accuracy /* @out */, bool& success /* @out */) override
+    {
+        Core::JSON::VariantContainer response;
+        const auto rc = ParseResponse("getTimeZoneDST", "{}", response);
+        if (rc != Core::ERROR_NONE) {
+            return rc;
+        }
+        if (response.HasLabel(_T("timeZone"))) {
+            timeZone = response[_T("timeZone")].String();
+        }
+        if (response.HasLabel(_T("accuracy"))) {
+            accuracy = response[_T("accuracy")].String();
+        }
+        success = response.HasLabel(_T("success")) ? response[_T("success")].Boolean() : true;
+        return Core::ERROR_NONE;
+    }
+
+    Core::hresult SetFriendlyName(const string& friendlyName, SystemResult& result /* @out */) override
+    {
+        std::string responseText;
+        const std::string params = std::string("{\"friendlyName\":\"") + friendlyName + "\"}";
+        const auto rc = Invoke("setFriendlyName", params, responseText);
+        if (rc != Core::ERROR_NONE) {
+            return rc;
+        }
+        Core::JSON::VariantContainer response;
+        response.FromString(responseText);
+        result.success = response.HasLabel(_T("success")) && response[_T("success")].Boolean();
+        return Core::ERROR_NONE;
+    }
+
+    Core::hresult SetTerritory(const string& territory, const string& region, SystemError& error /* @out */, bool& success /* @out */) override
+    {
+        std::string responseText;
+        const std::string params = std::string("{\"territory\":\"") + territory + "\",\"region\":\"" + region + "\"}";
+        const auto rc = Invoke("setTerritory", params, responseText);
+        if (rc != Core::ERROR_NONE) {
+            return rc;
+        }
+        Core::JSON::VariantContainer response;
+        response.FromString(responseText);
+        success = response.HasLabel(_T("success")) && response[_T("success")].Boolean();
+        if (response.HasLabel(_T("message"))) {
+            error.message = response[_T("message")].String();
+        }
+        return Core::ERROR_NONE;
+    }
+
+    Core::hresult SetTimeZoneDST(const string& timeZone, const string& accuracy, uint32_t& SysSrv_Status /* @out */, string& errorMessage /* @out */, bool& success /* @out */) override
+    {
+        std::string responseText;
+        const std::string params = std::string("{\"timeZone\":\"") + timeZone + "\",\"accuracy\":\"" + accuracy + "\"}";
+        const auto rc = Invoke("setTimeZoneDST", params, responseText);
+        if (rc != Core::ERROR_NONE) {
+            return rc;
+        }
+        Core::JSON::VariantContainer response;
+        response.FromString(responseText);
+        success = response.HasLabel(_T("success")) && response[_T("success")].Boolean();
+        if (response.HasLabel(_T("SysSrv_Status"))) {
+            SysSrv_Status = static_cast<uint32_t>(response[_T("SysSrv_Status")].Number());
+        }
+        if (response.HasLabel(_T("errorMessage"))) {
+            errorMessage = response[_T("errorMessage")].String();
+        }
+        return Core::ERROR_NONE;
+    }
+
+    Core::hresult GetSystemVersions(SystemVersionsInfo& systemVersionsInfo /* @out */) override
+    {
+        Core::JSON::VariantContainer response;
+        const auto rc = ParseResponse("getSystemVersions", "{}", response);
+        if (rc != Core::ERROR_NONE) {
+            return rc;
+        }
+        if (response.HasLabel(_T("stbVersion"))) {
+            systemVersionsInfo.stbVersion = response[_T("stbVersion")].String();
+        }
+        if (response.HasLabel(_T("receiverVersion"))) {
+            systemVersionsInfo.receiverVersion = response[_T("receiverVersion")].String();
+        }
+        if (response.HasLabel(_T("stbTimestamp"))) {
+            systemVersionsInfo.stbTimestamp = response[_T("stbTimestamp")].String();
+        }
+        systemVersionsInfo.success = response.HasLabel(_T("success")) ? response[_T("success")].Boolean() : true;
+        return Core::ERROR_NONE;
+    }
+
+    virtual Core::hresult GetDownloadedFirmwareInfo(DownloadedFirmwareInfo& downloadedFirmwareInfo /* @out */) override { (void)downloadedFirmwareInfo; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetFirmwareDownloadPercent(int32_t & downloadPercent /* @out */, bool& success /* @out */) override { (void)downloadPercent; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetFirmwareUpdateInfo(const string& GUID, bool &asyncResponse /* @out */, bool& success /* @out */) override { (void)GUID; (void)asyncResponse; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetFirmwareUpdateState(int& firmwareUpdateState /* @out */, bool& success /* @out */) override { (void)firmwareUpdateState; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetLastFirmwareFailureReason(string& failReason /* @out */, bool& success /* @out */) override { (void)failReason; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetLastWakeupKeyCode(int& wakeupKeyCode /* @out */, bool& success /* @out */) override { (void)wakeupKeyCode; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetMfgSerialNumber(string& mfgSerialNumber /* @out */, bool& success /* @out */) override { (void)mfgSerialNumber; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetNetworkStandbyMode(bool& nwStandby /* @out */, bool& success /* @out */) override { (void)nwStandby; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetPowerState(string& powerState /* @out */, bool& success /* @out */) override { (void)powerState; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetPowerStateBeforeReboot(string& state /* @out */, bool& success /* @out */) override { (void)state; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetRFCConfig(IStringIterator* const& rfcList, string& RFCConfig /* @out @opaque */, uint32_t& SysSrv_Status /* @out */, string& errorMessage /* @out */, bool& success /* @out */) override { (void)rfcList; (void)RFCConfig; (void)SysSrv_Status; (void)errorMessage; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetSerialNumber(string& serialNumber /* @out */, bool& success /* @out */) override { (void)serialNumber; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetTimeZones(IStringIterator* const& timeZones, string& zoneinfo /* @out @opaque */, bool& success /* @out */) override { (void)timeZones; (void)zoneinfo; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetWakeupReason(string& wakeupReason /* @out */, bool& success /* @out */) override { (void)wakeupReason; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult IsOptOutTelemetry(bool& OptOut /* @out @text Opt-Out*/, bool& success /* @out */) override { (void)OptOut; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult Reboot(const string& rebootReason, int& IARM_Bus_Call_STATUS /* @out */, bool& success /* @out */) override { (void)rebootReason; (void)IARM_Bus_Call_STATUS; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult SetDeepSleepTimer(const int seconds, uint32_t& SysSrv_Status /* @out */, string& errorMessage /* @out */, bool& success /* @out */) override { (void)seconds; (void)SysSrv_Status; (void)errorMessage; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult SetFirmwareAutoReboot(const bool enable, SystemResult& result /* @out */) override { (void)enable; (void)result; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult SetNetworkStandbyMode(const bool nwStandby, SystemResult& result /* @out */) override { (void)nwStandby; (void)result; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult SetOptOutTelemetry(const bool OptOut /* @text Opt-Out */, SystemResult& result /* @out */) override { (void)OptOut; (void)result; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult SetPowerState(const string &powerState, const string &standbyReason, uint32_t& SysSrv_Status /* @out */, string& errorMessage /* @out */, bool& success /* @out */) override { (void)powerState; (void)standbyReason; (void)SysSrv_Status; (void)errorMessage; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult SetBootLoaderSplashScreen(const string& path, ErrorInfo& error /* @out */, bool& success /* @out */) override { (void)path; (void)error; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult UpdateFirmware(SystemResult& result /* @out */) override { (void)result; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetBootTypeInfo(BootType &bootType /* @out */) override { (void)bootType; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult SetMigrationStatus(const string& status, SystemResult& result /* @out */) override { (void)status; (void)result; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetMigrationStatus(MigrationStatus &migrationStatus /* @out */) override { (void)migrationStatus; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetMacAddresses(const string& GUID, bool &asyncResponse /* @out */, uint32_t& SysSrv_Status /* @out */, string& errorMessage /* @out */, bool& success /* @out */) override { (void)GUID; (void)asyncResponse; (void)SysSrv_Status; (void)errorMessage; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetPlatformConfiguration (const string &query, PlatformConfig& platformConfig /* @out */) override { (void)query; (void)platformConfig; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult SetWakeupSrcConfiguration(const string& powerState, ISystemServicesWakeupSourcesIterator* const& wakeupSources, SystemResult& result /* @out */) override { (void)powerState; (void)wakeupSources; (void)result; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult RequestSystemUptime(string& systemUptime /* @out */, bool& success /* @out */) override { (void)systemUptime; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult SetMode(const ModeInfo& modeInfo, uint32_t& SysSrv_Status /* @out */, string& errorMessage /* @out */, bool& success /* @out */) override { (void)modeInfo; (void)SysSrv_Status; (void)errorMessage; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult UploadLogsAsync(SystemResult& result /* @out */) override { (void)result; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult AbortLogUpload(SystemResult& result /* @out */) override { (void)result; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult SetFSRFlag(const bool fsrFlag, SystemResult& result /* @out */) override { (void)fsrFlag; (void)result; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetFSRFlag(bool &fsrFlag /* @out */, bool& success /* @out */) override { (void)fsrFlag; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult SetBlocklistFlag(const bool blocklist, SetBlocklistResult& result /* @out */) override { (void)blocklist; (void)result; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetBlocklistFlag(BlocklistResult& result /* @out */) override { (void)result; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetBuildType(string& buildType /* @out @text build_type */, bool& success /* @out */) override { (void)buildType; (void)success; return Core::ERROR_UNAVAILABLE; }
+    virtual Core::hresult GetTimeStatus(string& TimeQuality /* @out */, string& TimeSrc /* @out */, string& Time /* @out */, bool& success /* @out */) override { (void)TimeQuality; (void)TimeSrc; (void)Time; (void)success; return Core::ERROR_UNAVAILABLE; }
+
+private:
+    uint32_t Invoke(const std::string& method, const std::string& params, std::string& response)
+    {
+        auto it = _handlers.find(method);
+        if (it == _handlers.end()) {
+            response = "{}";
+            return Core::ERROR_UNAVAILABLE;
+        }
+        return it->second(method, params, response);
+    }
+
+    uint32_t ParseResponse(const std::string& method, const std::string& params, Core::JSON::VariantContainer& response)
+    {
+        std::string responseText;
+        const auto rc = Invoke(method, params, responseText);
+        if (rc != Core::ERROR_NONE) {
+            return rc;
+        }
+        response.FromString(responseText);
+        return Core::ERROR_NONE;
+    }
+
+private:
+    mutable uint32_t _refCount {1};
+    ISystemServices::INotification* _notification {nullptr};
+    std::unordered_map<std::string, Handler> _handlers;
+};
+
 class SystemDelegateTest : public ::testing::Test {
 protected:
     // Shared across all tests in this suite — initialized once in SetUpTestSuite.
     static Core::Sink<AppGatewayCommon>* sPlugin;
     static NiceMock<ServiceMock>* sService;
-    static Core::Sink<MockJSONRPC::MockLocalDispatcher>* sSystemDisp;
+    static MockSystemServicesDispatcher* sSystemDisp;
     static Core::Sink<MockJSONRPC::MockLocalDispatcher>* sDisplayDisp;
     static Core::Sink<MockJSONRPC::MockLocalDispatcher>* sHdcpDisp;
 
     // Convenience references so existing TEST_F bodies compile unchanged.
     Core::Sink<AppGatewayCommon>& plugin = *sPlugin;
     NiceMock<ServiceMock>& service = *sService;
-    Core::Sink<MockJSONRPC::MockLocalDispatcher>& systemDispatcher = *sSystemDisp;
+    MockSystemServicesDispatcher& systemDispatcher = *sSystemDisp;
     Core::Sink<MockJSONRPC::MockLocalDispatcher>& displayDispatcher = *sDisplayDisp;
     Core::Sink<MockJSONRPC::MockLocalDispatcher>& hdcpDispatcher = *sHdcpDisp;
 
     static void SetUpTestSuite()
     {
         sService = new NiceMock<ServiceMock>();
-        sSystemDisp = new Core::Sink<MockJSONRPC::MockLocalDispatcher>();
+        sSystemDisp = new MockSystemServicesDispatcher();
         sDisplayDisp = new Core::Sink<MockJSONRPC::MockLocalDispatcher>();
         sHdcpDisp = new Core::Sink<MockJSONRPC::MockLocalDispatcher>();
         sPlugin = new Core::Sink<AppGatewayCommon>();
@@ -109,10 +355,10 @@ protected:
         ON_CALL(*sService, QueryInterfaceByCallsign(_, _))
             .WillByDefault(Return(nullptr));
 
-        ON_CALL(*sService, QueryInterfaceByCallsign(PluginHost::ILocalDispatcher::ID, ::testing::StrEq("org.rdk.System")))
+        ON_CALL(*sService, QueryInterfaceByCallsign(Exchange::ISystemServices::ID, ::testing::StrEq("org.rdk.System")))
             .WillByDefault(::testing::Invoke([](uint32_t, const string&) -> void* {
                 sSystemDisp->AddRef();
-                return static_cast<PluginHost::ILocalDispatcher*>(&*sSystemDisp);
+                return static_cast<Exchange::ISystemServices*>(sSystemDisp);
             }));
 
         ON_CALL(*sService, QueryInterfaceByCallsign(PluginHost::ILocalDispatcher::ID, ::testing::StrEq("org.rdk.DisplaySettings")))
@@ -153,7 +399,7 @@ protected:
 
 Core::Sink<AppGatewayCommon>* SystemDelegateTest::sPlugin = nullptr;
 NiceMock<ServiceMock>* SystemDelegateTest::sService = nullptr;
-Core::Sink<MockJSONRPC::MockLocalDispatcher>* SystemDelegateTest::sSystemDisp = nullptr;
+MockSystemServicesDispatcher* SystemDelegateTest::sSystemDisp = nullptr;
 Core::Sink<MockJSONRPC::MockLocalDispatcher>* SystemDelegateTest::sDisplayDisp = nullptr;
 Core::Sink<MockJSONRPC::MockLocalDispatcher>* SystemDelegateTest::sHdcpDisp = nullptr;
 
@@ -231,7 +477,7 @@ class SystemDelegateCacheTest : public ::testing::Test {
 protected:
     Core::Sink<AppGatewayCommon> plugin;
     NiceMock<ServiceMock> service;
-    Core::Sink<MockJSONRPC::MockLocalDispatcher> systemDispatcher;
+    MockSystemServicesDispatcher systemDispatcher;
     Core::Sink<MockJSONRPC::MockLocalDispatcher> displayDispatcher;
     Core::Sink<MockJSONRPC::MockLocalDispatcher> hdcpDispatcher;
 
@@ -239,10 +485,10 @@ protected:
     {
         ON_CALL(service, QueryInterfaceByCallsign(_, _))
             .WillByDefault(Return(nullptr));
-        ON_CALL(service, QueryInterfaceByCallsign(PluginHost::ILocalDispatcher::ID, ::testing::StrEq("org.rdk.System")))
+        ON_CALL(service, QueryInterfaceByCallsign(Exchange::ISystemServices::ID, ::testing::StrEq("org.rdk.System")))
             .WillByDefault(::testing::Invoke([this](uint32_t, const string&) -> void* {
                 systemDispatcher.AddRef();
-                return static_cast<PluginHost::ILocalDispatcher*>(&systemDispatcher);
+                return static_cast<Exchange::ISystemServices*>(&systemDispatcher);
             }));
         ON_CALL(service, QueryInterfaceByCallsign(PluginHost::ILocalDispatcher::ID, ::testing::StrEq("org.rdk.DisplaySettings")))
             .WillByDefault(::testing::Invoke([this](uint32_t, const string&) -> void* {
@@ -1029,8 +1275,10 @@ TEST_F(SystemDelegateTest, AGC_L1_139_GetTimeZone_MissingTimeZoneField)
     string result;
     const auto rc = plugin.HandleAppGatewayRequest(ctx, "localization.timezone", "{}", result);
 
-    // success=true but no timeZone field → falls through to error path
-    EXPECT_NE(Core::ERROR_NONE, rc);
+    // In the COMRPC path, success=true is treated as a successful call and an
+    // absent timezone maps to an empty JSON string value.
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ("\"\"", result);
 }
 
 /* ================================================================
@@ -1045,7 +1293,7 @@ class SystemDelegateEmitTest : public ::testing::Test {
 protected:
     Core::Sink<AppGatewayCommon> plugin;
     NiceMock<ServiceMock> service;
-    Core::Sink<MockJSONRPC::MockLocalDispatcher> systemDispatcher;
+    MockSystemServicesDispatcher systemDispatcher;
     Core::Sink<MockJSONRPC::MockLocalDispatcher> displayDispatcher;
     Core::Sink<MockJSONRPC::MockLocalDispatcher> hdcpDispatcher;
     std::vector<MockEmitter*> heapEmitters;
@@ -1055,10 +1303,10 @@ protected:
         ON_CALL(service, QueryInterfaceByCallsign(_, _))
             .WillByDefault(Return(nullptr));
 
-        ON_CALL(service, QueryInterfaceByCallsign(PluginHost::ILocalDispatcher::ID, ::testing::StrEq("org.rdk.System")))
+        ON_CALL(service, QueryInterfaceByCallsign(Exchange::ISystemServices::ID, ::testing::StrEq("org.rdk.System")))
             .WillByDefault(::testing::Invoke([this](uint32_t, const string&) -> void* {
                 systemDispatcher.AddRef();
-                return static_cast<PluginHost::ILocalDispatcher*>(&systemDispatcher);
+                return static_cast<Exchange::ISystemServices*>(&systemDispatcher);
             }));
 
         ON_CALL(service, QueryInterfaceByCallsign(PluginHost::ILocalDispatcher::ID, ::testing::StrEq("org.rdk.DisplaySettings")))

@@ -42,7 +42,7 @@ public:
     MOCK_METHOD(hresult, AbortReport, (), (override));
     MOCK_METHOD(hresult, SetOptOutTelemetry, (const bool optOut , TelemetrySuccess& successResult), (override));
     MOCK_METHOD(hresult, IsOptOutTelemetry, (bool& optOut , bool& success), (override));
-    MOCK_METHOD(void, AddRef, (), (const, override));
+    MOCK_METHOD(uint32_t, AddRef, (), (const, override));
     MOCK_METHOD(uint32_t, Release, (), (const, override));
     MOCK_METHOD(void*, QueryInterface, (const uint32_t interfacenumber), (override));
 

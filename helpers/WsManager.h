@@ -21,14 +21,13 @@
 
 #include <mutex>
 #include <memory>
+#include <utility>
 #include <plugins/plugins.h>
 #include "UtilsLogging.h"
 #include "WebSocketLink.h"
 
 
-// TODO: Remove once IsNullValue() in core/JSON.h is fixed
-// and replace StreamJSONOneShotType with StreamJSONType
-#include "StreamJSONOneShot.h"
+#include <core/StreamJSON.h>
 
 #define DEFAULT_SOCKET_ADDRESS "127.0.0.1"
 using namespace WPEFramework;
@@ -91,12 +90,12 @@ public:
     // WebSocket Server implementation
     public:
     class WebSocketServer
-        : public Core::StreamJSONOneShotType<Web::WebSocket::HWebSocketServerType<Core::SocketStream>, JSONObjectFactory &, Core::JSON::IElement>
+        : public Core::StreamJSONType<Web::WebSocket::HWebSocketServerType<Core::SocketStream>, JSONObjectFactory &, Core::JSON::IElement>
     {
     public:
         WebSocketServer() = delete;
         WebSocketServer &operator=(const WebSocketServer &) = delete;
-        typedef Core::StreamJSONOneShotType<Web::WebSocket::HWebSocketServerType<Core::SocketStream>, JSONObjectFactory &, Core::JSON::IElement> BaseClass;                
+        typedef Core::StreamJSONType<Web::WebSocket::HWebSocketServerType<Core::SocketStream>, JSONObjectFactory &, Core::JSON::IElement> BaseClass;                
 
     public:
         WebSocketServer(const SOCKET &connector, const Core::NodeId &remoteNode, Core::SocketServerType<WebSocketServer> *parent) :
@@ -402,7 +401,7 @@ public:
 
     void SetAuthHandler(const AuthHandler& handler) { _authHandler = handler; }
 
-    void SetDisconnectHandler(DisconnectHandler handler) { _disconnectHandler = handler; }
+    void SetDisconnectHandler(DisconnectHandler handler) { _disconnectHandler = std::move(handler); }
 
     // NEW: Setter for automation ID
     void SetAutomationId(uint32_t automationId) { 
@@ -561,11 +560,6 @@ public:
         try
         {
             mChannel = new WebSocketChannel(remoteNode, *this);
-            if (nullptr == mChannel)
-            {
-                LOGERR("Failed to create WebSocket channel");
-                return false;
-            }
 
             LOGINFO("WebSocket channel started successfully on %s %d", remoteNode.HostAddress().c_str(), remoteNode.PortNumber());
             return true;

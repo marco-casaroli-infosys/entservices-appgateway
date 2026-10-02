@@ -74,7 +74,7 @@ class UserSettingMock : public IUserSettings, public IUserSettingsInspector {
         MOCK_METHOD(WPEFramework::Core::hresult, GetMigrationState, (const SettingsKey key, bool& requiresMigration), (const, override));
         MOCK_METHOD(WPEFramework::Core::hresult, GetMigrationStates, (IUserSettingsMigrationStateIterator*& states), (const, override));
 
-        MOCK_METHOD(void, AddRef, (), (const, override));
+        MOCK_METHOD(uint32_t, AddRef, (), (const, override));
         MOCK_METHOD(uint32_t, Release, (), (const, override));
         MOCK_METHOD(void*, QueryInterface, (const uint32_t interfaceId), (override));
 };

@@ -110,6 +110,7 @@ extern uint32_t Test_Telemetry_ResponsePayloadTracking_ErrorResponse();
 extern uint32_t Test_Telemetry_SendT2Event_NonJsonPayload();
 extern uint32_t Test_Telemetry_Compact_FloatAndBoolean();
 extern uint32_t Test_Telemetry_Compact_ArrayPayload();
+extern uint32_t Test_Telemetry_RecordTelemetryEvent_RippleLogMarkers();
 // New AppGatewayImplementation coverage tests
 extern uint32_t Test_AppGatewayImplementation_Event_MissingListenParam();
 extern uint32_t Test_AppGatewayImplementation_UpdateContext_NonJsonParams();
@@ -536,6 +537,7 @@ int main()
         { "Telemetry_SendT2Event_NonJsonPayload", Test_Telemetry_SendT2Event_NonJsonPayload },
         { "Telemetry_Compact_FloatAndBoolean", Test_Telemetry_Compact_FloatAndBoolean },
         { "Telemetry_Compact_ArrayPayload", Test_Telemetry_Compact_ArrayPayload },
+        { "Telemetry_RecordTelemetryEvent_RippleLogMarkers", Test_Telemetry_RecordTelemetryEvent_RippleLogMarkers },
         // New AppGatewayImplementation coverage tests
         { "AppGatewayImplementation_Event_MissingListenParam", Test_AppGatewayImplementation_Event_MissingListenParam },
         { "AppGatewayImplementation_UpdateContext_NonJsonParams", Test_AppGatewayImplementation_UpdateContext_NonJsonParams },

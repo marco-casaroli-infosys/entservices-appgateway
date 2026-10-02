@@ -498,6 +498,8 @@ namespace Plugin {
         // Helper to send telemetry via T2 (context-aware)
         void SendT2Event(const char* marker, const std::string& payload, const Exchange::GatewayContext& context);
         void SendT2Event(const char* marker, const JsonObject& payload, const Exchange::GatewayContext& context);
+        // Overload for raw (non-JSON) payloads such as CSV _split markers — no context prepended, no JSON wrapping
+        void SendT2Event(const char* marker, const std::string& rawPayload);
 
         // Reset counters after reporting
         void ResetHealthStats();

@@ -28,6 +28,7 @@
 #include <interfaces/IAppActions.h>
 #include <interfaces/IConfiguration.h>
 #include <AppActions.h>
+#include <set>
 
 #include "L0TestTypes.hpp"
 
@@ -49,9 +50,9 @@ public:
 
     ~AANotificationFake() override = default;
 
-    void AddRef() const override
+    uint32_t AddRef() const override
     {
-        _refCount.fetch_add(1, std::memory_order_relaxed);
+        return _refCount.fetch_add(1, std::memory_order_relaxed) + 1;
     }
 
     uint32_t Release() const override
@@ -126,9 +127,9 @@ public:
 
     ~AARemoteConnectionFake() override = default;
 
-    void AddRef() const override
+    uint32_t AddRef() const override
     {
-        _refCount.fetch_add(1, std::memory_order_relaxed);
+        return _refCount.fetch_add(1, std::memory_order_relaxed) + 1;
     }
 
     uint32_t Release() const override
@@ -194,9 +195,9 @@ public:
 
     ~AAImplFake() override = default;
 
-    void AddRef() const override
+    uint32_t AddRef() const override
     {
-        _refCount.fetch_add(1, std::memory_order_relaxed);
+        return _refCount.fetch_add(1, std::memory_order_relaxed) + 1;
     }
 
     uint32_t Release() const override
@@ -314,9 +315,9 @@ public:
     }
 
     // Core::IUnknown
-    void AddRef() const override
+    uint32_t AddRef() const override
     {
-        _refCount.fetch_add(1, std::memory_order_relaxed);
+        return _refCount.fetch_add(1, std::memory_order_relaxed) + 1;
     }
 
     uint32_t Release() const override

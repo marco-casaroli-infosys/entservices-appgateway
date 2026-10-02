@@ -95,7 +95,7 @@ public:
     ~NotificationHandler() override = default;
 
     // IUnknown ref-counting (real, non-mock)
-    void AddRef() const override { ++m_refCount; }
+    uint32_t AddRef() const override { return ++m_refCount; }
     uint32_t Release() const override
     {
         const uint32_t result = --m_refCount;
@@ -165,7 +165,7 @@ protected:
             2, Core::Thread::DefaultStackSize(), 64))
     {
         // Permissive baseline defaults — tests override with EXPECT_CALL as needed.
-        ON_CALL(service, AddRef()).WillByDefault(Return());
+        ON_CALL(service, AddRef()).WillByDefault(Return(1));
         ON_CALL(service, Release()).WillByDefault(Return(Core::ERROR_NONE));
         ON_CALL(service, QueryInterfaceByCallsign(_, _)).WillByDefault(Return(nullptr));
 
@@ -1997,7 +1997,7 @@ TEST_F(AppNotificationsTest, Destructor_ReleasesShell_WhenShellIsNotNull)
     // Create a standalone implementation (not via fixture) to test destructor behavior.
     // We verify that the shell's Release is called when the impl goes out of scope.
     NiceMock<ServiceMock> localService;
-    ON_CALL(localService, AddRef()).WillByDefault(Return());
+    ON_CALL(localService, AddRef()).WillByDefault(Return(1));
     ON_CALL(localService, Release()).WillByDefault(Return(Core::ERROR_NONE));
     ON_CALL(localService, QueryInterfaceByCallsign(_, _)).WillByDefault(Return(nullptr));
 
@@ -3273,7 +3273,7 @@ public:
         , mTerminateCalled(false)
     {}
 
-    void AddRef() const override { ++mRefCount; }
+    uint32_t AddRef() const override { return ++mRefCount; }
     uint32_t Release() const override {
         uint32_t result = --mRefCount;
         if (0 == result) delete this;
@@ -3372,7 +3372,7 @@ protected:
         : workerPool(Core::ProxyType<WorkerPoolImplementation>::Create(
             2, Core::Thread::DefaultStackSize(), 64))
     {
-        ON_CALL(service, AddRef()).WillByDefault(Return());
+        ON_CALL(service, AddRef()).WillByDefault(Return(1));
         ON_CALL(service, Release()).WillByDefault(Return(Core::ERROR_NONE));
         ON_CALL(service, QueryInterfaceByCallsign(_, _)).WillByDefault(Return(nullptr));
         ON_CALL(service, COMLink()).WillByDefault(Return(&comLink));

@@ -25,6 +25,7 @@
 #include <mutex>
 #include <map>
 #include <unordered_set>
+#include <utility>
 
 using namespace WPEFramework;
 
@@ -35,7 +36,7 @@ public:
     {
     public:
         EventDelegateDispatchJob(BaseEventDelegate *delegate, const string &event, const string &payload, string appId = "")
-            : mDelegate(*delegate), mEvent(event), mPayload(payload), mAppId(appId) {}
+            : mDelegate(*delegate), mEvent(event), mPayload(payload), mAppId(std::move(appId)) {}
 
         EventDelegateDispatchJob() = delete;
         EventDelegateDispatchJob(const EventDelegateDispatchJob &) = delete;
@@ -47,7 +48,7 @@ public:
         static Core::ProxyType<Core::IDispatch> Create(BaseEventDelegate *parent,
                                                        const string &event, const string &payload, string appId = "")
         {
-            return (Core::ProxyType<Core::IDispatch>(Core::ProxyType<EventDelegateDispatchJob>::Create(parent, event, payload, appId)));
+            return (Core::ProxyType<Core::IDispatch>(Core::ProxyType<EventDelegateDispatchJob>::Create(parent, event, payload, std::move(appId))));
         }
 
         virtual void Dispatch()
@@ -93,7 +94,7 @@ public:
             return false;
         }
 
-        Core::IWorkerPool::Instance().Submit(EventDelegateDispatchJob::Create(this, event, payload, appId));
+        Core::IWorkerPool::Instance().Submit(EventDelegateDispatchJob::Create(this, event, payload, std::move(appId)));
 
         return true;
     }
@@ -144,7 +145,7 @@ public:
         {
             std::unordered_set<Exchange::IAppNotificationHandler::IEmitter *> emitters;
             emitters.insert(cb);
-            mRegisteredNotifications[event_l] = emitters;
+            mRegisteredNotifications[event_l] = std::move(emitters);
             cb->AddRef();
             LOGDBG("Notification registered = %s", event_l.c_str());
         }

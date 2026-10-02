@@ -323,6 +323,33 @@
  */
 #define AGW_MARKER_PLUGIN_API_LATENCY               "ENTS_INFO_AppGwPluginApiLat"
 
+/**
+ * @brief Metrics error event marker (Firebolt metrics.error API call)
+ * @details Reports application error from FbMetrics plugin.
+ * @usage Use AGW_REPORT_EVENT(context, AGW_MARKER_APP_METRICS_ERROR, csvData)
+ * @payload CSV: appId,Code,type,visible,description
+ * @example AGW_REPORT_EVENT(ctx, AGW_MARKER_APP_METRICS_ERROR, "myApp,503,network,true,Service unavailable")
+ */
+#define AGW_MARKER_APP_METRICS_ERROR                "APP_METRICS_ERROR_split"
+
+/**
+ * @brief Sign-in status event marker (Firebolt Discovery signIn/signOut)
+ * @details Reports application sign-in state change from FbDiscovery plugin.
+ * @usage Use AGW_REPORT_EVENT(context, AGW_MARKER_APP_SIGNIN_STATUS, csvData)
+ * @payload CSV: appId,signInStatus  (signInStatus: true=SignIn, false=SignOut)
+ * @example AGW_REPORT_EVENT(ctx, AGW_MARKER_APP_SIGNIN_STATUS, "myApp,true")
+ */
+#define AGW_MARKER_APP_SIGNIN_STATUS                "APP_SIGNIN_STATUS_split"
+
+/**
+ * @brief Application ready event marker (lifecycle.ready)
+ * @details Reports application readiness from AppGatewayCommon.
+ * @usage Use AGW_REPORT_EVENT(context, AGW_MARKER_APP_READY, csvData)
+ * @payload CSV: appId
+ * @example AGW_REPORT_EVENT(ctx, AGW_MARKER_APP_READY, "myApp")
+ */
+#define AGW_MARKER_APP_READY                        "APP_READY_split"
+
 
 //=============================================================================
 // PREDEFINED PLUGIN NAMES

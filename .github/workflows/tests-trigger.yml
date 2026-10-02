@@ -13,22 +13,17 @@ jobs:
     uses: ./.github/workflows/L0-tests.yml
     with:
       caller_source: local
-    secrets:
-      RDKCM_RDKE: ${{ secrets.RDKCM_RDKE }}
 
   trigger-L1:
     uses: ./.github/workflows/L1-tests.yml
     with:
       caller_source: local
-    secrets:
-      RDKCM_RDKE: ${{ secrets.RDKCM_RDKE }}
 
   trigger-L2:
+    if: false  # Disabled due to new thunder version issue
     uses: ./.github/workflows/L2-tests.yml
     with:
       caller_source: local
-    secrets:
-      RDKCM_RDKE: ${{ secrets.RDKCM_RDKE }}
 
   coverage-gate:
     name: Coverage Gate

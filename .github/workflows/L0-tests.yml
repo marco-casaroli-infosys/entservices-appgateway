@@ -12,17 +12,17 @@ on:
         required: false
         type: boolean
         default: false
-    secrets:
-      RDKCM_RDKE:
-        required: false
 
 permissions:
   contents: read
 
 env:
   BUILD_TYPE: Debug
-  THUNDER_REF: "R4.4.1"
-  INTERFACES_REF: "develop"
+  THUNDER_REF: "R4_4-RDK"
+  THUNDER_TOOLS_REF: "R4_4-RDK"
+  THUNDER_TOOLS_COMMIT_SHA: "d5dd83c7c19c49c7f25c558c126500bd2d64f7a4"
+  THUNDER_COMMIT_SHA: "2c0fcc5529e7da734be558ca6efa05d934dcce31"
+  INTERFACES_REF: "topic/RDKEMW-20993"
   ENABLE_GDB: ${{ (inputs.enable_gdb && '1') || '0' }}
   # L0 test targets to build and run -- To add a new plugin, append its test binary name here and add its target in Tests/L0Tests/CMakeLists.txt.
   L0_PLUGIN_TESTS: "appgateway_l0test appgatewaycommon_l0test appnotifications_l0test appactions_l0test"
@@ -99,7 +99,7 @@ jobs:
           echo "Trigger Source: ${{ inputs.caller_source }}"
 
       - name: Set up CMake
-        uses: jwlawson/actions-setup-cmake@v1.13
+        uses: jwlawson/actions-setup-cmake@65b272e1213f99771fbba0c237e0b3312270e0c9
         with:
           cmake-version: '3.16.x'
 
@@ -136,6 +136,7 @@ jobs:
           repository: rdkcentral/Thunder
           path: Thunder
           ref: ${{env.THUNDER_REF}}
+          fetch-depth: 0
 
       - name: Checkout ThunderTools
         if: steps.cache.outputs.cache-hit != 'true' || steps.toolchain.outputs.need_rebuild == '1'
@@ -143,7 +144,14 @@ jobs:
         with:
           repository: rdkcentral/ThunderTools
           path: ThunderTools
-          ref: R4.4.3
+          ref: ${{env.THUNDER_TOOLS_REF}}
+          fetch-depth: 0
+
+      - name: Pin ThunderTools commit
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          cd "$GITHUB_WORKSPACE/ThunderTools"
+          git checkout "${{ env.THUNDER_TOOLS_COMMIT_SHA }}"
 
       - name: Checkout entservices-apis
         if: steps.cache.outputs.cache-hit != 'true' || steps.toolchain.outputs.need_rebuild == '1'
@@ -157,7 +165,7 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true' || steps.toolchain.outputs.need_rebuild == '1'
         run: |
           cd $GITHUB_WORKSPACE/ThunderTools
-          patch -p1 < $GITHUB_WORKSPACE/Tests/patches/00010-R4.4-Add-support-for-project-dir.patch
+          #patch -p1 < $GITHUB_WORKSPACE/Tests/patches/00010-R4.4-Add-support-for-project-dir.patch
           cd -
 
       - name: Build ThunderTools
@@ -226,12 +234,18 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true' || steps.toolchain.outputs.need_rebuild == '1'
         run: |
           cd $GITHUB_WORKSPACE/Thunder
-          patch -p1 < $GITHUB_WORKSPACE/Tests/patches/Use_Legact_Alt_Based_On_ThunderTools_R4.4.3.patch
-          patch -p1 < $GITHUB_WORKSPACE/Tests/patches/error_code_R4_4.patch
-          patch -p1 < $GITHUB_WORKSPACE/Tests/patches/1004-Add-support-for-project-dir.patch
-          patch -p1 < $GITHUB_WORKSPACE/Tests/patches/RDKEMW-733-Add-ENTOS-IDS.patch
-          patch -p1 < $GITHUB_WORKSPACE/Tests/patches/Jsonrpc_dynamic_error_handling.patch
+          #patch -p1 < $GITHUB_WORKSPACE/Tests/patches/Use_Legact_Alt_Based_On_ThunderTools_R4.4.3.patch
+          #patch -p1 < $GITHUB_WORKSPACE/Tests/patches/error_code_R4_4.patch
+          #patch -p1 < $GITHUB_WORKSPACE/Tests/patches/1004-Add-support-for-project-dir.patch
+          #patch -p1 < $GITHUB_WORKSPACE/Tests/patches/RDKEMW-733-Add-ENTOS-IDS.patch
+          #patch -p1 < $GITHUB_WORKSPACE/Tests/patches/Jsonrpc_dynamic_error_handling.patch
           cd -
+    
+      - name: Pin Thunder commit
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          cd "$GITHUB_WORKSPACE/Thunder"
+          git checkout "${{ env.THUNDER_COMMIT_SHA }}"
 
       - name: Build Thunder
         if: steps.cache.outputs.cache-hit != 'true' || steps.toolchain.outputs.need_rebuild == '1'
