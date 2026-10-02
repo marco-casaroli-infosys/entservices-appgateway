@@ -234,7 +234,7 @@ namespace WPEFramework
                 LOGDBG("Respond: dropping outgoing response for hibernated appId=%s", context.appId.c_str());
                 return Core::ERROR_NONE;
             }
-            Core::IWorkerPool::Instance().Submit(RespondJob::Create(this, context.connectionId, context.requestId, payload, context.appId));
+            Core::IWorkerPool::Instance().Submit(RespondJob::Create(this, context.connectionId, context.requestId, payload));
             return Core::ERROR_NONE;
         }
 
@@ -246,10 +246,10 @@ namespace WPEFramework
             }
             // check if the connection is compliant with JSON RPC
             if (mCompliantJsonRpcRegistry.IsCompliantJsonRpc(context.connectionId)) {
-                Core::IWorkerPool::Instance().Submit(EmitJob::Create(this, context.connectionId, method, payload, context.appId));
+                Core::IWorkerPool::Instance().Submit(EmitJob::Create(this, context.connectionId, method, payload));
             }
             else {
-                Core::IWorkerPool::Instance().Submit(RespondJob::Create(this, context.connectionId, context.requestId, payload, context.appId));
+                Core::IWorkerPool::Instance().Submit(RespondJob::Create(this, context.connectionId, context.requestId, payload));
             }
             return Core::ERROR_NONE;
         }

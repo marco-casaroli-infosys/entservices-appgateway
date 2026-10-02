@@ -112,7 +112,7 @@ A private inner class inside `AppGatewayResponderImplementation` that maintains 
 `AppGatewayResponderImplementation` now also inherits `IAppGatewayAppSessionGuard`. Drop checks against `PausedAppsRegistry` are inserted at the four traffic entry points:
 
 - **`DispatchWsMsg`** (inbound): if the sender's appId is paused, the message is silently discarded before reaching the resolver.
-- **`Respond`, `Emit`, `Request`** (outbound): if the target appId is paused, the operation returns `Core::ERROR_NONE` immediately without submitting a worker-pool job. Jobs accepted immediately before suspension re-check the paused state when they execute and are dropped if the application has since hibernated.
+- **`Respond`, `Emit`, `Request`** (outbound): if the target appId is paused, the operation returns `Core::ERROR_NONE` immediately without submitting a worker-pool job.
 
 `SuspendTraffic` and `ResumeTraffic` simply delegate to `PausedAppsRegistry::Pause` and `Resume` respectively.
 
