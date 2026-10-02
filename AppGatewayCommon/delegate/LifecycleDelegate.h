@@ -954,31 +954,32 @@ class LifecycleDelegate : public BaseEventDelegate
         return nullptr;
     }
 
-    // Handle Lifecycle update for a given appInstanceId by accepting the previous and current lifecycle state
+    // Updates lifecycle state, emits Lifecycle 2/1 notifications, controls the
+    // hibernation traffic gate, and dispatches a newly supplied navigation intent.
     void HandleLifecycleUpdate(const string& appInstanceId,
                                const Exchange::ILifecycleManager::LifecycleState oldLifecycleState,
                                const Exchange::ILifecycleManager::LifecycleState newLifecycleState,
                                const bool bIntentUpdated = true)
     {
         LOGINFO("HandleLifecycleUpdate: appInstanceId=%s, oldState=%d, newState=%d", appInstanceId.c_str(), oldLifecycleState, newLifecycleState);
-        // update lifecycle state registry
+        // Update the registry before building notification payloads so consumers
+        // observe the new state.
         mLifecycleStateRegistry.UpdateLifecycleState(appInstanceId, newLifecycleState);
 
-        // get appId from appInstanceId
+        // Lifecycle notifications and traffic control are keyed by appId.
         string appId = mAppIdInstanceIdMap.GetAppId(appInstanceId);
         if (appId.empty()) {
             LOGWARN("HandleLifecycleUpdate: No appId found for appInstanceId=%s, skipping dispatch", appInstanceId.c_str());
             return;
         }
 
-        // Lifecycle 2 only: manage WebSocket traffic gate around hibernation.
+        // Lifecycle 2 only: clear stale suspension for every new session and
+        // reopen traffic before announcing a transition out of HIBERNATED.
+        // Entering HIBERNATED follows the inverse order: deliver the state event
+        // first, then close the traffic gate.
         //
-        // Resume MUST happen before Dispatch() so the state-change event is not
-        // itself dropped by the still-paused responder.  Suspend is best-effort
-        // and happens after Dispatch() when entering HIBERNATED.
-        //
-        // Acquire a raw ref under the mutex, then release the mutex before making
-        // any COM-RPC calls to avoid holding the lock across a cross-process call.
+        // AcquireSessionGuardRef returns an AddRef'd pointer. No session-guard
+        // mutex is held while SuspendTraffic or ResumeTraffic performs COM-RPC.
         const bool needsResume = ConfigUtils::useAppManagers() && !appId.empty() &&
                                  (newLifecycleState == Exchange::ILifecycleManager::INITIALIZING ||
                                   oldLifecycleState == Exchange::ILifecycleManager::HIBERNATED);
@@ -991,7 +992,8 @@ class LifecycleDelegate : public BaseEventDelegate
         }
 
         LOGINFO("HandleLifecycleUpdate: appId=%s, needsResume=%d, needsSuspend=%d, guardRef=%p", appId.c_str(), needsResume, needsSuspend, guardRef);
-        // Resume before dispatch so the Lifecycle2.onStateChanged event is delivered.
+        // INITIALIZING clears suspension left by a crashed prior session. Leaving
+        // HIBERNATED resumes first so the state-change event is not dropped.
         if (needsResume && guardRef != nullptr) {
             if (newLifecycleState == Exchange::ILifecycleManager::INITIALIZING) {
                 LOGINFO("HandleLifecycleUpdate: clearing stale traffic suspension for new session appId=%s", appId.c_str());
@@ -1002,13 +1004,17 @@ class LifecycleDelegate : public BaseEventDelegate
         }
 
         const string lifecyclePayload = mLifecycleStateRegistry.GetLifecycle2StateJson(appInstanceId);
-        if (needsSuspend && IsNotificationRegistered("Lifecycle2.onStateChanged")) {
+        // Normal lifecycle delivery remains asynchronous. When a guard will close
+        // the channel, deliver HIBERNATED synchronously to guarantee Emit completes
+        // before SuspendTraffic starts dropping outbound jobs.
+        if (needsSuspend && guardRef != nullptr && IsNotificationRegistered("Lifecycle2.onStateChanged")) {
             DispatchToAppNotifications("Lifecycle2.onStateChanged", lifecyclePayload, appId);
         } else {
             Dispatch("Lifecycle2.onStateChanged", lifecyclePayload, appId);
         }
 
-        // Suspend after dispatch (best-effort) when entering HIBERNATED.
+        // Suspension is best-effort: lifecycle processing continues if the guard
+        // was unavailable during plugin startup or lazy acquisition.
         if (needsSuspend && guardRef != nullptr) {
             LOGINFO("HandleLifecycleUpdate: suspending traffic for hibernating appId=%s", appId.c_str());
             guardRef->SuspendTraffic(appId);
@@ -1019,10 +1025,9 @@ class LifecycleDelegate : public BaseEventDelegate
             guardRef = nullptr;
         }
 
-        // Background / Context: DispatchLastKnownIntent reads app specific intent from from mNavigationIntentRegistry
-        // and emits Actions.onIntent.
-        // Dispatch the intent only when this lifecycle update supplied a new navigation intent
-        // that was stored in the registry.
+        // DispatchLastKnownIntent reads the app-specific intent from
+        // mNavigationIntentRegistry and emits Actions.onIntent. Do this only when
+        // the current lifecycle callback stored a new navigation intent.
         if (bIntentUpdated) {
             DispatchLastKnownIntent(appId);
         }
