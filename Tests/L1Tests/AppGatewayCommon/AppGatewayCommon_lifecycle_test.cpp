@@ -1263,10 +1263,8 @@ TEST_F(LifecycleDelegateTest, AGC_L1_208_LifecycleDeliveredBeforeDiscoveryNaviga
     std::vector<std::string> callbackOrder;
     bool lifecycleStarted = false;
     bool lifecycleBlocked = false;
-    bool navigationStarted = false;
-    bool navigationCompleted = false;
-    bool navigationStartedBeforeLifecycle = false;
-    bool navigationCompletedBeforeLifecycle = false;
+    bool releaseLifecycle = false;
+    bool navigationStartedWhileLifecycleBlocked = false;
     bool callbacksOverlapped = false;
 
     MockEmitter* lifecycleEmitter = new MockEmitter();
@@ -1286,12 +1284,11 @@ TEST_F(LifecycleDelegateTest, AGC_L1_208_LifecycleDeliveredBeforeDiscoveryNaviga
             lifecycleBlocked = true;
             callbackCondition.notify_all();
 
-            const bool navigationWasStarted = callbackCondition.wait_for(
+            callbackCondition.wait_for(
                 lock,
                 std::chrono::seconds(1),
-                [&navigationStarted] { return navigationStarted; });
+                [&releaseLifecycle] { return releaseLifecycle; });
 
-            navigationCompletedBeforeLifecycle = navigationWasStarted && navigationCompleted;
             lifecycleBlocked = false;
             callbackOrder.emplace_back("lifecycle");
             callbackCondition.notify_all();
@@ -1299,10 +1296,8 @@ TEST_F(LifecycleDelegateTest, AGC_L1_208_LifecycleDeliveredBeforeDiscoveryNaviga
     EXPECT_CALL(*navigationEmitter, Emit(::testing::HasSubstr("Discovery.onNavigateTo"), _, _))
         .WillOnce(::testing::Invoke([&](const string&, const string&, const string&) {
             std::lock_guard<std::mutex> lock(callbackMutex);
-            navigationStarted = true;
-            navigationStartedBeforeLifecycle = !lifecycleStarted;
+            navigationStartedWhileLifecycleBlocked = lifecycleBlocked;
             callbacksOverlapped = lifecycleStarted && lifecycleBlocked;
-            navigationCompleted = true;
             callbackOrder.emplace_back("navigation");
             callbackCondition.notify_all();
         }));
@@ -1315,15 +1310,29 @@ TEST_F(LifecycleDelegateTest, AGC_L1_208_LifecycleDeliveredBeforeDiscoveryNaviga
     );
 
     std::unique_lock<std::mutex> lock(callbackMutex);
+    const bool lifecycleWasStarted = callbackCondition.wait_for(
+        lock,
+        std::chrono::seconds(1),
+        [&lifecycleStarted] { return lifecycleStarted; });
+
+    if (!lifecycleWasStarted) {
+        releaseLifecycle = true;
+        callbackCondition.notify_all();
+        lock.unlock();
+        FAIL() << "Lifecycle callback did not start";
+    }
+
+    releaseLifecycle = true;
+    callbackCondition.notify_all();
+
     const bool bothCallbacksCompleted = callbackCondition.wait_for(
         lock,
         std::chrono::seconds(1),
         [&callbackOrder] { return callbackOrder.size() == 2U; });
 
     ASSERT_TRUE(bothCallbacksCompleted);
-    ASSERT_TRUE(callbacksOverlapped);
-    EXPECT_FALSE(navigationStartedBeforeLifecycle);
-    EXPECT_FALSE(navigationCompletedBeforeLifecycle);
+    EXPECT_FALSE(navigationStartedWhileLifecycleBlocked);
+    EXPECT_FALSE(callbacksOverlapped);
     ASSERT_EQ(callbackOrder.size(), 2U);
     EXPECT_EQ(callbackOrder[0], "lifecycle");
     EXPECT_EQ(callbackOrder[1], "navigation");
