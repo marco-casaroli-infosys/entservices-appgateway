@@ -19,6 +19,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <condition_variable>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -1247,7 +1248,6 @@ TEST_F(LifecycleDelegateTest, AGC_L1_208_LifecycleDeliveredBeforeDiscoveryNaviga
 {
     ASSERT_NE(capturedNotification, nullptr);
 
-    // Store an initial intent before subscribing so its initial navigation event is not observed.
     capturedNotification->OnAppLifecycleStateChanged(
         "test.app", "instance-order-001",
         Exchange::ILifecycleManager::UNLOADED,
@@ -1258,8 +1258,16 @@ TEST_F(LifecycleDelegateTest, AGC_L1_208_LifecycleDeliveredBeforeDiscoveryNaviga
     auto lifecycleDelegate = plugin.mDelegate->getLifecycleDelegate();
     ASSERT_NE(lifecycleDelegate, nullptr);
 
-    std::mutex callbackOrderMutex;
+    std::mutex callbackMutex;
+    std::condition_variable callbackCondition;
     std::vector<std::string> callbackOrder;
+    bool lifecycleStarted = false;
+    bool lifecycleBlocked = false;
+    bool navigationStarted = false;
+    bool navigationCompleted = false;
+    bool navigationStartedBeforeLifecycle = false;
+    bool navigationCompletedBeforeLifecycle = false;
+    bool callbacksOverlapped = false;
 
     MockEmitter* lifecycleEmitter = new MockEmitter();
     heapEmitters.push_back(lifecycleEmitter);
@@ -1272,17 +1280,33 @@ TEST_F(LifecycleDelegateTest, AGC_L1_208_LifecycleDeliveredBeforeDiscoveryNaviga
     lifecycleDelegate->AddNotification("Discovery.onNavigateTo", navigationEmitter);
 
     EXPECT_CALL(*lifecycleEmitter, Emit(::testing::HasSubstr("Lifecycle.onBackground"), _, _))
-        .WillOnce(::testing::Invoke([&callbackOrderMutex, &callbackOrder](const string&, const string&, const string&) {
-            std::lock_guard<std::mutex> lock(callbackOrderMutex);
+        .WillOnce(::testing::Invoke([&](const string&, const string&, const string&) {
+            std::unique_lock<std::mutex> lock(callbackMutex);
+            lifecycleStarted = true;
+            lifecycleBlocked = true;
+            callbackCondition.notify_all();
+
+            const bool navigationWasStarted = callbackCondition.wait_for(
+                lock,
+                std::chrono::seconds(1),
+                [&navigationStarted] { return navigationStarted; });
+
+            navigationCompletedBeforeLifecycle = navigationWasStarted && navigationCompleted;
+            lifecycleBlocked = false;
             callbackOrder.emplace_back("lifecycle");
+            callbackCondition.notify_all();
         }));
     EXPECT_CALL(*navigationEmitter, Emit(::testing::HasSubstr("Discovery.onNavigateTo"), _, _))
-        .WillOnce(::testing::Invoke([&callbackOrderMutex, &callbackOrder](const string&, const string&, const string&) {
-            std::lock_guard<std::mutex> lock(callbackOrderMutex);
+        .WillOnce(::testing::Invoke([&](const string&, const string&, const string&) {
+            std::lock_guard<std::mutex> lock(callbackMutex);
+            navigationStarted = true;
+            navigationStartedBeforeLifecycle = !lifecycleStarted;
+            callbacksOverlapped = lifecycleStarted && lifecycleBlocked;
+            navigationCompleted = true;
             callbackOrder.emplace_back("navigation");
+            callbackCondition.notify_all();
         }));
 
-    // The updated intent dispatches Lifecycle.onBackground before Discovery.onNavigateTo.
     capturedNotification->OnAppLifecycleStateChanged(
         "test.app", "instance-order-001",
         Exchange::ILifecycleManager::INITIALIZING,
@@ -1290,9 +1314,16 @@ TEST_F(LifecycleDelegateTest, AGC_L1_208_LifecycleDeliveredBeforeDiscoveryNaviga
         "{\"action\":\"browse\"}"
     );
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    std::unique_lock<std::mutex> lock(callbackMutex);
+    const bool bothCallbacksCompleted = callbackCondition.wait_for(
+        lock,
+        std::chrono::seconds(1),
+        [&callbackOrder] { return callbackOrder.size() == 2U; });
 
-    std::lock_guard<std::mutex> lock(callbackOrderMutex);
+    ASSERT_TRUE(bothCallbacksCompleted);
+    ASSERT_TRUE(callbacksOverlapped);
+    EXPECT_FALSE(navigationStartedBeforeLifecycle);
+    EXPECT_FALSE(navigationCompletedBeforeLifecycle);
     ASSERT_EQ(callbackOrder.size(), 2U);
     EXPECT_EQ(callbackOrder[0], "lifecycle");
     EXPECT_EQ(callbackOrder[1], "navigation");
