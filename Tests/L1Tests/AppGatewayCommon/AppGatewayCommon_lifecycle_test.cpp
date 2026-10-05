@@ -19,7 +19,9 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <mutex>
 #include <string>
+#include <vector>
 
 #include "Module.h"
 
@@ -1239,6 +1241,61 @@ TEST_F(LifecycleDelegateTest, AGC_L1_207a_ActionsOnIntent_NotEmittedWhenIntentNo
     );
 
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
+}
+
+TEST_F(LifecycleDelegateTest, AGC_L1_208_LifecycleDeliveredBeforeDiscoveryNavigateTo)
+{
+    ASSERT_NE(capturedNotification, nullptr);
+
+    // Store an initial intent before subscribing so its initial navigation event is not observed.
+    capturedNotification->OnAppLifecycleStateChanged(
+        "test.app", "instance-order-001",
+        Exchange::ILifecycleManager::UNLOADED,
+        Exchange::ILifecycleManager::INITIALIZING,
+        "{\"action\":\"search\"}"
+    );
+
+    auto lifecycleDelegate = plugin.mDelegate->getLifecycleDelegate();
+    ASSERT_NE(lifecycleDelegate, nullptr);
+
+    std::mutex callbackOrderMutex;
+    std::vector<std::string> callbackOrder;
+
+    MockEmitter* lifecycleEmitter = new MockEmitter();
+    heapEmitters.push_back(lifecycleEmitter);
+    lifecycleEmitter->AddRef();
+    lifecycleDelegate->AddNotification("Lifecycle.onBackground", lifecycleEmitter);
+
+    MockEmitter* navigationEmitter = new MockEmitter();
+    heapEmitters.push_back(navigationEmitter);
+    navigationEmitter->AddRef();
+    lifecycleDelegate->AddNotification("Discovery.onNavigateTo", navigationEmitter);
+
+    EXPECT_CALL(*lifecycleEmitter, Emit(::testing::HasSubstr("Lifecycle.onBackground"), _, _))
+        .WillOnce(::testing::Invoke([&callbackOrderMutex, &callbackOrder](const string&, const string&, const string&) {
+            std::lock_guard<std::mutex> lock(callbackOrderMutex);
+            callbackOrder.emplace_back("lifecycle");
+        }));
+    EXPECT_CALL(*navigationEmitter, Emit(::testing::HasSubstr("Discovery.onNavigateTo"), _, _))
+        .WillOnce(::testing::Invoke([&callbackOrderMutex, &callbackOrder](const string&, const string&, const string&) {
+            std::lock_guard<std::mutex> lock(callbackOrderMutex);
+            callbackOrder.emplace_back("navigation");
+        }));
+
+    // The updated intent dispatches Lifecycle.onBackground before Discovery.onNavigateTo.
+    capturedNotification->OnAppLifecycleStateChanged(
+        "test.app", "instance-order-001",
+        Exchange::ILifecycleManager::INITIALIZING,
+        Exchange::ILifecycleManager::ACTIVE,
+        "{\"action\":\"browse\"}"
+    );
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    std::lock_guard<std::mutex> lock(callbackOrderMutex);
+    ASSERT_EQ(callbackOrder.size(), 2U);
+    EXPECT_EQ(callbackOrder[0], "lifecycle");
+    EXPECT_EQ(callbackOrder[1], "navigation");
 }
 
 /* ================================================================
