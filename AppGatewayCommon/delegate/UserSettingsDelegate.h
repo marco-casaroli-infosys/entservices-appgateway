@@ -813,15 +813,11 @@ class UserSettingsDelegate : public BaseEventDelegate{
 
             if (rc == Core::ERROR_NONE) {
                 // Transform: return_or_error(.result, "couldn't get locale")
-                // Return the full locale without any transformation
-                if (!presentationLanguage.empty()) {
-                    // Wrap in quotes to make it a valid JSON string
-                    result = "\"" + presentationLanguage + "\"";
-                    return Core::ERROR_NONE;
-                } else {
-                    result = "{\"error\":\"couldn't get locale\"}";
-                    return Core::ERROR_GENERAL;
-                }
+                // Return the full locale without any transformation.
+                // Firebolt spec: presentationLanguage may legitimately be "" when
+                // uninitialized — that is a valid value, not an error.
+                result = "\"" + presentationLanguage + "\"";
+                return Core::ERROR_NONE;
             } else {
                 LOGERR("Failed to call GetPresentationLanguage on UserSettings COM interface, error: %u", rc);
                 result = "{\"error\":\"couldn't get locale\"}";

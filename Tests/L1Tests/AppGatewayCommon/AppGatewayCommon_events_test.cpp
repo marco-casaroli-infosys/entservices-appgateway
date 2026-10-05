@@ -686,16 +686,37 @@ TEST_F(UserSettingsNotificationTest, AGC_L1_222_UserSettings_OnPreferredAudioLan
 
 TEST_F(UserSettingsNotificationTest, AGC_L1_223_UserSettings_OnPresentationLanguageChanged_Dispatches)
 {
-    MockEmitter* emitter = new MockEmitter();
-    heapEmitters.push_back(emitter);
-    emitter->AddRef();
+    MockEmitter* localeEmitter = new MockEmitter();
+    heapEmitters.push_back(localeEmitter);
+    localeEmitter->AddRef();
+
+    MockEmitter* languageEmitter = new MockEmitter();
+    heapEmitters.push_back(languageEmitter);
+    languageEmitter->AddRef();
+
+    MockEmitter* presentationLanguageEmitter = new MockEmitter();
+    heapEmitters.push_back(presentationLanguageEmitter);
+    presentationLanguageEmitter->AddRef();
 
     bool status = false;
-    plugin.HandleAppEventNotifier(emitter, "Localization.onPresentationLanguageChanged", true, status);
+    plugin.HandleAppEventNotifier(localeEmitter, "Localization.onLocaleChanged", true, status);
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     ASSERT_NE(capturedUSNotification, nullptr);
 
-    EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("Localization.onPresentationLanguageChanged"), _, _)).Times(::testing::AtLeast(1));
+    plugin.HandleAppEventNotifier(languageEmitter, "Localization.onLanguageChanged", true, status);
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+    plugin.HandleAppEventNotifier(presentationLanguageEmitter, "Localization.onPresentationLanguageChanged", true, status);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    ASSERT_NE(capturedUSNotification, nullptr);
+
+    EXPECT_CALL(*localeEmitter, Emit(::testing::HasSubstr("Localization.onLocaleChanged"), ::testing::StrEq("en-US"), _))
+        .Times(::testing::AtLeast(1));
+    EXPECT_CALL(*languageEmitter, Emit(::testing::HasSubstr("Localization.onLanguageChanged"), ::testing::StrEq("\"en\""), _))
+        .Times(::testing::AtLeast(1));
+    EXPECT_CALL(*presentationLanguageEmitter, Emit(::testing::HasSubstr("Localization.onPresentationLanguageChanged"), ::testing::StrEq("{\"value\":\"en-US\"}"), _))
+        .Times(::testing::AtLeast(1));
+
     capturedUSNotification->OnPresentationLanguageChanged("en-US");
 
     std::this_thread::sleep_for(std::chrono::milliseconds(25));
@@ -837,9 +858,9 @@ TEST_F(UserSettingsNotificationTest, AGC_L1_229_UserSettings_OnPresentationLangu
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
 
     // onLocaleChanged and onPresentationLanguageChanged must fire
-    EXPECT_CALL(*localeEmitter, Emit(::testing::HasSubstr("Localization.onLocaleChanged"), _, _))
+    EXPECT_CALL(*localeEmitter, Emit(::testing::HasSubstr("Localization.onLocaleChanged"), ::testing::StrEq("eng"), _))
         .Times(::testing::AtLeast(1));
-    EXPECT_CALL(*presEmitter, Emit(::testing::HasSubstr("Localization.onPresentationLanguageChanged"), _, _))
+    EXPECT_CALL(*presEmitter, Emit(::testing::HasSubstr("Localization.onPresentationLanguageChanged"), ::testing::StrEq("{\"value\":\"eng\"}"), _))
         .Times(::testing::AtLeast(1));
     // onLanguageChanged must NOT fire for a non-hyphenated locale
     EXPECT_CALL(*langEmitter, Emit(::testing::HasSubstr("Localization.onLanguageChanged"), _, _))
