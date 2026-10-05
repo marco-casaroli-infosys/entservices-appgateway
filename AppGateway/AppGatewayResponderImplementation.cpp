@@ -59,7 +59,7 @@ namespace WPEFramework
 
         AppGatewayResponderImplementation::~AppGatewayResponderImplementation()
         {
-            if (mShutdownState != nullptr) {
+            if (nullptr != mShutdownState) {
                 mShutdownState->stopping.store(true, std::memory_order_release);
             }
             LOGINFO("AppGatewayResponderImplementation destructor");
