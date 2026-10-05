@@ -96,7 +96,7 @@ namespace WPEFramework
 
             std::unique_lock<std::mutex> lock(mShutdownMutex);
             mShutdownCv.wait(lock, [this]() {
-                return (mActiveJobs.load(std::memory_order_acquire) == 0);
+                return (0 == mActiveJobs.load(std::memory_order_acquire));
             });
         }
 
