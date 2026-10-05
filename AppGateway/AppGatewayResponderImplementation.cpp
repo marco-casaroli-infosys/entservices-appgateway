@@ -127,14 +127,17 @@ namespace WPEFramework
                 return false;
             }
 
-            std::unique_lock<std::mutex> lock(shutdownState->mutex);
-            if (shutdownState->stopping.load(std::memory_order_acquire)) {
-                return false;
+            Core::ProxyType<Core::IDispatch> job;
+            {
+                std::unique_lock<std::mutex> lock(shutdownState->mutex);
+                if (shutdownState->stopping.load(std::memory_order_acquire)) {
+                    return false;
+                }
+
+                shutdownState->activeJobs.fetch_add(1, std::memory_order_acq_rel);
+                job = jobFactory();
             }
 
-            shutdownState->activeJobs.fetch_add(1, std::memory_order_acq_rel);
-            auto job = jobFactory();
-            lock.unlock();
             Core::IWorkerPool::Instance().Submit(job);
             return true;
         }
@@ -238,8 +241,8 @@ namespace WPEFramework
                         #endif
                         #endif
                         
-                        QueueWorkerJob([this, connectionId, appId]() {
-                            return ConnectionStatusNotificationJob::Create(this, connectionId, appId, true);
+                        QueueWorkerJob([this, connectionId, appId = std::move(appId)]() {
+                            return ConnectionStatusNotificationJob::Create(this, connectionId, std::move(appId), true);
                         });
 
                         return true;
@@ -269,8 +272,8 @@ namespace WPEFramework
                     AppGatewayTelemetry::getInstance().DecrementWebSocketConnections(context);
                     
                     if (appId != "UNKNOWN") {
-                        QueueWorkerJob([this, connectionId, appId]() {
-                            return ConnectionStatusNotificationJob::Create(this, connectionId, appId, false);
+                        QueueWorkerJob([this, connectionId, appId = std::move(appId)]() {
+                            return ConnectionStatusNotificationJob::Create(this, connectionId, std::move(appId), false);
                         });
                     }
                     

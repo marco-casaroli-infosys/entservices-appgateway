@@ -105,7 +105,7 @@ public:
     uint32_t Release() const override { return Core::ERROR_NONE; }
 };
 
-class TestAppGatewayResponderImplementation final : public AppGatewayResponderImplementation {
+class TestAppGatewayResponderImplementation : public AppGatewayResponderImplementation {
 public:
     uint32_t AddRef() const override { return 1; }
     uint32_t Release() const override { return Core::ERROR_NONE; }
@@ -265,7 +265,7 @@ static TestAppGatewayResponderImplementation& StableAsyncResponder()
     return holder.responder;
 }
 
-class ShutdownTrackingResponder final : public TestAppGatewayResponderImplementation {
+class ShutdownTrackingResponder : public TestAppGatewayResponderImplementation {
 public:
     mutable std::atomic<bool> releaseSawZeroActiveJobs{false};
 
@@ -279,21 +279,24 @@ public:
     }
 };
 
-class BlockingDispatchJob final : public Core::IDispatch {
+class BlockingDispatchJob final : public AppGatewayResponderImplementation::RefCountedDispatchJob<ShutdownTrackingResponder> {
 public:
-    static Core::ProxyType<BlockingDispatchJob> Create(std::atomic<bool>& started,
+    static Core::ProxyType<BlockingDispatchJob> Create(ShutdownTrackingResponder* responder,
+                                                     std::atomic<bool>& started,
                                                      std::atomic<bool>& release,
                                                      std::mutex& mutex,
                                                      std::condition_variable& cv)
     {
-        return Core::ProxyType<BlockingDispatchJob>::Create(started, release, mutex, cv);
+        return Core::ProxyType<BlockingDispatchJob>::Create(responder, started, release, mutex, cv);
     }
 
-    BlockingDispatchJob(std::atomic<bool>& started,
+    BlockingDispatchJob(ShutdownTrackingResponder* responder,
+                        std::atomic<bool>& started,
                         std::atomic<bool>& release,
                         std::mutex& mutex,
                         std::condition_variable& cv)
-        : mStarted(started)
+        : RefCountedDispatchJob(responder)
+        , mStarted(started)
         , mRelease(release)
         , mMutex(mutex)
         , mCv(cv)
@@ -990,7 +993,7 @@ TEST(AppGatewayPluginTest, AppGatewayResponderImplementation_ShutdownBarrier_Wai
 
     ASSERT_TRUE(responder.QueueWorkerJob([&]() {
         return Core::ProxyType<Core::IDispatch>(
-            Core::ProxyType<BlockingDispatchJob>::Create(jobStarted, releaseJob, jobMutex, jobCv));
+            Core::ProxyType<BlockingDispatchJob>::Create(&responder, jobStarted, releaseJob, jobMutex, jobCv));
     }));
 
     std::unique_lock<std::mutex> startLock(jobMutex);

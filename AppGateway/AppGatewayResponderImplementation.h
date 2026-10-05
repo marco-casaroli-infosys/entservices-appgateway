@@ -34,6 +34,7 @@
 #include <unordered_set>
 #include <sstream>
 #include <unordered_map>
+#include <utility>
 
 
 namespace WPEFramework {
@@ -251,10 +252,13 @@ namespace Plugin {
         protected:
             ConnectionStatusNotificationJob(AppGatewayResponderImplementation *parent,
             const uint32_t connectionId,
-            const std::string& appId,
+            std::string appId,
             const bool connected
             )
-                : RefCountedDispatchJob(parent), mConnectionId(connectionId), mAppId(appId), mConnected(connected)
+                : RefCountedDispatchJob(parent)
+                , mConnectionId(connectionId)
+                , mAppId(std::move(appId))
+                , mConnected(connected)
             {
             }
 
@@ -265,9 +269,9 @@ namespace Plugin {
 
         public:
             static Core::ProxyType<Core::IDispatch> Create(AppGatewayResponderImplementation *parent,
-                const uint32_t connectionId, const std::string& appId, const bool connected)
+                const uint32_t connectionId, std::string appId, const bool connected)
             {
-                return (Core::ProxyType<Core::IDispatch>(Core::ProxyType<ConnectionStatusNotificationJob>::Create(parent, connectionId, appId, connected)));
+                return (Core::ProxyType<Core::IDispatch>(Core::ProxyType<ConnectionStatusNotificationJob>::Create(parent, connectionId, std::move(appId), connected)));
             }
             virtual void Dispatch()
             {
