@@ -1003,6 +1003,7 @@ class TestL2CoverageIntegration(unittest.TestCase):
         self.assertEqual(r.returncode, 0, msg=r.stdout + r.stderr)
         self.assertIn("[PASS]", r.stdout)
         self.assertIn("[WARN]", r.stdout)
+        self.assertIn("OVERALL: \x1b[31m[WARN]\x1b[0m", r.stdout)
 
     # --- --output-json: L2 key emitted when present ------------------------------
 
