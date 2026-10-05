@@ -30,7 +30,7 @@
 #include <core/StreamJSON.h>
 
 #define DEFAULT_SOCKET_ADDRESS "127.0.0.1"
-#define SOCKET_STREAM_BUFFER_SIZE 10
+#define QUEUE_BUFFER_SIZE 10
 #define WEBSOCKET_SERVER_PORT 8096
 
 using namespace WPEFramework;
@@ -106,7 +106,7 @@ public:
                   WEBSOCKET_SERVER_PORT, WEBSOCKET_SERVER_PORT),
         _id(0),
         _parent(static_cast<WebSocketConnectionManager::WebSocketChannel &>(*parent)),
-        _queue(SOCKET_STREAM_BUFFER_SIZE){
+        _queue(QUEUE_BUFFER_SIZE){
             LOGTRACE("Connector value: %d", static_cast<int>(connector));
             LOGTRACE("Remote host: %s", remoteNode.HostAddress().c_str()); 
         }
@@ -308,7 +308,7 @@ public:
         void AddToPending(Core::ProxyType<Core::JSONRPC::Message>& element)
         {
             Core::SafeSyncType<Core::CriticalSection> lock(_qLock);
-            if (SOCKET_STREAM_BUFFER_SIZE == _queue.Count()) {
+            if (QUEUE_BUFFER_SIZE == _queue.Count()) {
                 LOGERR("Queue full for %d processing error for first entry", _id);
                 // Remove the first entry
                 auto firstElement = _queue[0];

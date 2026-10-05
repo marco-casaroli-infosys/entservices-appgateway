@@ -18,7 +18,6 @@
  */
 
 #include "AppGateway.h"
-#include "AppGatewayResponderImplementation.h"
 #include "AppGatewayTelemetry.h"
 #include <interfaces/IConfiguration.h>
 #include <interfaces/json/JsonData_AppGatewayResolver.h>
@@ -66,11 +65,11 @@ namespace Plugin {
 
     /* virtual */ const string AppGateway::Initialize(PluginHost::IShell* service)
     {
-        SYSLOG(Logging::Startup, (_T("AppGateway::Initialize: entry PID=%d"), static_cast<int>(getpid())));
         ASSERT(service != nullptr);
         ASSERT(mAppGateway == nullptr);
         ASSERT(mResponder == nullptr);
         ASSERT(mTelemetry == nullptr);
+        SYSLOG(Logging::Startup, (_T("AppGateway::Initialize: PID=%d"), static_cast<int>(getpid())));
 
         LOGINFO("AppGateway::Initialize: PID=%u", getpid());
         // Measure bootstrap time
@@ -124,13 +123,8 @@ namespace Plugin {
         double durationMs = durationUs / 1000.0;  // Convert to milliseconds with decimal precision
         AppGatewayTelemetry::getInstance().RecordBootstrapTime(durationMs);
             
-        const bool initialized = (mAppGateway != nullptr) && (mResponder != nullptr);
-        SYSLOG(Logging::Startup, (_T("AppGateway::Initialize: exit PID=%d status=%s"),
-            static_cast<int>(getpid()),
-            initialized ? "success" : "failure"));
-
         // On success return empty, to indicate there is no error text.
-        return initialized
+        return ((mAppGateway != nullptr) && (mResponder != nullptr))
             ? EMPTY_STRING
             : _T("Could not retrieve the AppGateway interface.");
     }
@@ -156,9 +150,6 @@ namespace Plugin {
         LOGINFO("AppGatewayTelemetry deinitialized");
 
         if (mResponder != nullptr) {
-            auto* responderImpl = static_cast<Plugin::AppGatewayResponderImplementation*>(mResponder);
-            responderImpl->Stop();
-
             result = mResponder->Release();
             mResponder = nullptr;
 

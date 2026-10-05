@@ -56,27 +56,17 @@ namespace WPEFramework
 #endif
         }
 
-        void AppGatewayResponderImplementation::Stop()
+        AppGatewayResponderImplementation::~AppGatewayResponderImplementation()
         {
-            if (mStopping.exchange(true, std::memory_order_acq_rel)) {
-                return;
-            }
-
-            LOGINFO("AppGatewayResponderImplementation stop requested");
-
-            // Close out the active callbacks before releasing the responder. This
-            // prevents any queued dispatch work from submitting new work after the
-            // shutdown gate is already closed.
+            mStopping.store(true, std::memory_order_release);
+            LOGINFO("AppGatewayResponderImplementation destructor");
+            
+            // Clear WebSocket handlers before destruction to prevent use-after-free
             mWsManager.SetMessageHandler(nullptr);
             mWsManager.SetAuthHandler(nullptr);
             mWsManager.SetDisconnectHandler(nullptr);
-        }
-
-        AppGatewayResponderImplementation::~AppGatewayResponderImplementation()
-        {
-            Stop();
-            LOGINFO("AppGatewayResponderImplementation destructor");
-
+            // Note: WebSocketConnectionManager destructor will handle channel cleanup
+            
             if (nullptr != mService)
             {
                 mService->Release();
@@ -245,8 +235,7 @@ namespace WPEFramework
         Core::hresult AppGatewayResponderImplementation::Respond(const Context& context, const string& payload)
         {
             if (mStopping.load(std::memory_order_acquire)) {
-                LOGWARN("Rejecting Respond during shutdown for connectionId=%u requestId=%d", context.connectionId, context.requestId);
-                return Core::ERROR_ILLEGAL_STATE;
+                return Core::ERROR_NONE;
             }
             Core::IWorkerPool::Instance().Submit(RespondJob::Create(this, context.connectionId, context.requestId, payload));
             return Core::ERROR_NONE;
@@ -255,8 +244,7 @@ namespace WPEFramework
         Core::hresult AppGatewayResponderImplementation::Emit(const Context& context /* @in */, 
                 const string& method /* @in */, const string& payload /* @in @opaque */) {
             if (mStopping.load(std::memory_order_acquire)) {
-                LOGWARN("Rejecting Emit during shutdown for connectionId=%u method=%s", context.connectionId, method.c_str());
-                return Core::ERROR_ILLEGAL_STATE;
+                return Core::ERROR_NONE;
             }
             // check if the connection is compliant with JSON RPC
             if (mCompliantJsonRpcRegistry.IsCompliantJsonRpc(context.connectionId)) {
@@ -271,8 +259,7 @@ namespace WPEFramework
         Core::hresult AppGatewayResponderImplementation::Request(const uint32_t connectionId /* @in */, 
                 const uint32_t id /* @in */, const string& method /* @in */, const string& params /* @in @opaque */) {
             if (mStopping.load(std::memory_order_acquire)) {
-                LOGWARN("Rejecting Request during shutdown for connectionId=%u method=%s", connectionId, method.c_str());
-                return Core::ERROR_ILLEGAL_STATE;
+                return Core::ERROR_NONE;
             }
             Core::IWorkerPool::Instance().Submit(RequestJob::Create(this, connectionId, id, method, params));
             return Core::ERROR_NONE;

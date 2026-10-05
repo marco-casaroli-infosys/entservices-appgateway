@@ -42,7 +42,6 @@ namespace Plugin {
     public:
         AppGatewayResponderImplementation();
         ~AppGatewayResponderImplementation() override;
-        void Stop();
 
         // We do not allow this plugin to be copied !!
         AppGatewayResponderImplementation(const AppGatewayResponderImplementation&) = delete;
