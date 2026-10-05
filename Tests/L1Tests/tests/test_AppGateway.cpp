@@ -279,7 +279,7 @@ public:
     }
 };
 
-class BlockingDispatchJob final : public AppGatewayResponderImplementation::RefCountedDispatchJob<ShutdownTrackingResponder> {
+class BlockingDispatchJob : public AppGatewayResponderImplementation::RefCountedDispatchJob<ShutdownTrackingResponder> {
 public:
     static Core::ProxyType<BlockingDispatchJob> Create(ShutdownTrackingResponder* responder,
                                                      std::atomic<bool>& started,

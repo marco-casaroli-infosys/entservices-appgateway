@@ -93,7 +93,7 @@ namespace WPEFramework
         void AppGatewayResponderImplementation::BeginShutdown()
         {
             auto shutdownState = mShutdownState;
-            if (shutdownState == nullptr) {
+            if (nullptr == shutdownState) {
                 return;
             }
 
@@ -110,7 +110,7 @@ namespace WPEFramework
 
         void AppGatewayResponderImplementation::CompleteJob(const std::shared_ptr<ShutdownState>& shutdownState)
         {
-            if (shutdownState == nullptr) {
+            if (nullptr == shutdownState) {
                 return;
             }
 
@@ -123,7 +123,7 @@ namespace WPEFramework
         bool AppGatewayResponderImplementation::QueueWorkerJob(const std::function<Core::ProxyType<Core::IDispatch>()>& jobFactory)
         {
             auto shutdownState = mShutdownState;
-            if (shutdownState == nullptr) {
+            if (nullptr == shutdownState) {
                 return false;
             }
 
