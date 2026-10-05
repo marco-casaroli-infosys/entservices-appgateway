@@ -368,7 +368,10 @@ namespace Plugin {
             const uint32_t requestId,
             const uint32_t connectionId);
 
+    public:
         void BeginShutdown();
+
+    private:
         void CompleteJob();
         bool QueueWorkerJob(const std::function<Core::ProxyType<Core::IDispatch>()>& jobFactory);
 
