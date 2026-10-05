@@ -19,7 +19,10 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <condition_variable>
+#include <mutex>
 #include <string>
+#include <vector>
 
 #include "Module.h"
 
@@ -1239,6 +1242,100 @@ TEST_F(LifecycleDelegateTest, AGC_L1_207a_ActionsOnIntent_NotEmittedWhenIntentNo
     );
 
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
+}
+
+TEST_F(LifecycleDelegateTest, AGC_L1_208_LifecycleDeliveredBeforeDiscoveryNavigateTo)
+{
+    ASSERT_NE(capturedNotification, nullptr);
+
+    capturedNotification->OnAppLifecycleStateChanged(
+        "test.app", "instance-order-001",
+        Exchange::ILifecycleManager::UNLOADED,
+        Exchange::ILifecycleManager::INITIALIZING,
+        "{\"action\":\"search\"}"
+    );
+
+    auto lifecycleDelegate = plugin.mDelegate->getLifecycleDelegate();
+    ASSERT_NE(lifecycleDelegate, nullptr);
+
+    std::mutex callbackMutex;
+    std::condition_variable callbackCondition;
+    std::vector<std::string> callbackOrder;
+    bool lifecycleStarted = false;
+    bool lifecycleBlocked = false;
+    bool releaseLifecycle = false;
+    bool navigationStartedWhileLifecycleBlocked = false;
+    bool callbacksOverlapped = false;
+
+    MockEmitter* lifecycleEmitter = new MockEmitter();
+    heapEmitters.push_back(lifecycleEmitter);
+    lifecycleEmitter->AddRef();
+    lifecycleDelegate->AddNotification("Lifecycle.onBackground", lifecycleEmitter);
+
+    MockEmitter* navigationEmitter = new MockEmitter();
+    heapEmitters.push_back(navigationEmitter);
+    navigationEmitter->AddRef();
+    lifecycleDelegate->AddNotification("Discovery.onNavigateTo", navigationEmitter);
+
+    EXPECT_CALL(*lifecycleEmitter, Emit(::testing::HasSubstr("Lifecycle.onBackground"), _, _))
+        .WillOnce(::testing::Invoke([&](const string&, const string&, const string&) {
+            std::unique_lock<std::mutex> lock(callbackMutex);
+            lifecycleStarted = true;
+            lifecycleBlocked = true;
+            callbackCondition.notify_all();
+
+            callbackCondition.wait_for(
+                lock,
+                std::chrono::seconds(1),
+                [&releaseLifecycle] { return releaseLifecycle; });
+
+            lifecycleBlocked = false;
+            callbackOrder.emplace_back("lifecycle");
+            callbackCondition.notify_all();
+        }));
+    EXPECT_CALL(*navigationEmitter, Emit(::testing::HasSubstr("Discovery.onNavigateTo"), _, _))
+        .WillOnce(::testing::Invoke([&](const string&, const string&, const string&) {
+            std::lock_guard<std::mutex> lock(callbackMutex);
+            navigationStartedWhileLifecycleBlocked = lifecycleBlocked;
+            callbacksOverlapped = lifecycleStarted && lifecycleBlocked;
+            callbackOrder.emplace_back("navigation");
+            callbackCondition.notify_all();
+        }));
+
+    capturedNotification->OnAppLifecycleStateChanged(
+        "test.app", "instance-order-001",
+        Exchange::ILifecycleManager::INITIALIZING,
+        Exchange::ILifecycleManager::ACTIVE,
+        "{\"action\":\"browse\"}"
+    );
+
+    std::unique_lock<std::mutex> lock(callbackMutex);
+    const bool lifecycleWasStarted = callbackCondition.wait_for(
+        lock,
+        std::chrono::seconds(1),
+        [&lifecycleStarted] { return lifecycleStarted; });
+
+    if (!lifecycleWasStarted) {
+        releaseLifecycle = true;
+        callbackCondition.notify_all();
+        lock.unlock();
+        FAIL() << "Lifecycle callback did not start";
+    }
+
+    releaseLifecycle = true;
+    callbackCondition.notify_all();
+
+    const bool bothCallbacksCompleted = callbackCondition.wait_for(
+        lock,
+        std::chrono::seconds(1),
+        [&callbackOrder] { return callbackOrder.size() == 2U; });
+
+    ASSERT_TRUE(bothCallbacksCompleted);
+    EXPECT_FALSE(navigationStartedWhileLifecycleBlocked);
+    EXPECT_FALSE(callbacksOverlapped);
+    ASSERT_EQ(callbackOrder.size(), 2U);
+    EXPECT_EQ(callbackOrder[0], "lifecycle");
+    EXPECT_EQ(callbackOrder[1], "navigation");
 }
 
 /* ================================================================
