@@ -102,7 +102,7 @@ namespace WPEFramework
 
         void AppGatewayResponderImplementation::CompleteJob()
         {
-            if (mActiveJobs.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+            if (1 == mActiveJobs.fetch_sub(1, std::memory_order_acq_rel)) {
                 std::lock_guard<std::mutex> lock(mShutdownMutex);
                 mShutdownCv.notify_all();
             }
