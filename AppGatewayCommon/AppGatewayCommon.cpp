@@ -253,7 +253,7 @@ namespace Plugin {
             return self->GetPresentationLanguage(result);
         }},
         { "localization.presentationlanguage", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
-            return self->GetPresentationLanguage(result);
+            return self->GetLocale(result);
         }},
         { "localization.locale", [](AppGatewayCommon* self, const Exchange::GatewayContext&, const std::string&, std::string& result) {
             return self->GetLocale(result);

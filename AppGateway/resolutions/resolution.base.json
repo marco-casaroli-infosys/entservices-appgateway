@@ -367,10 +367,6 @@
             "alias":"org.rdk.AppGatewayCommon",
             "useComRpc": true
         },
-        "localization.presentationlanguage": {
-            "alias":"org.rdk.AppGatewayCommon",
-            "useComRpc": true
-        },
         "localization.onpresentationlanguagechanged": {
             "alias":"org.rdk.AppGatewayCommon",
             "event": "Localization.onPresentationLanguageChanged"
