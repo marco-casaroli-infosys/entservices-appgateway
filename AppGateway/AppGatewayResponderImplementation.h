@@ -30,6 +30,7 @@
 #include <condition_variable>
 #include <functional>
 #include <map>
+#include <memory>
 #include <unordered_set>
 #include <sstream>
 #include <unordered_map>
@@ -76,6 +77,12 @@ namespace Plugin {
         uint32_t Configure(PluginHost::IShell* service) override;
 
     private:
+        struct ShutdownState {
+            std::atomic<bool> stopping{false};
+            std::atomic<uint32_t> activeJobs{0};
+            std::mutex mutex;
+            std::condition_variable cv;
+        };
 
         template <typename TParent>
         class RefCountedDispatchJob : public Core::IDispatch 
@@ -83,17 +90,20 @@ namespace Plugin {
             protected:
                 RefCountedDispatchJob(TParent* parent)
                     : mParent(*parent)
+                    , mShutdownState(parent->mShutdownState)
                 {
                     mParent.AddRef();
                 }
 
                 ~RefCountedDispatchJob() override
                 {
-                    mParent.CompleteJob();
-                    mParent.Release();
+                    TParent* parent = &mParent;
+                    parent->Release();
+                    TParent::CompleteJob(mShutdownState);
                 }
 
                 TParent& mParent;
+                std::shared_ptr<ShutdownState> mShutdownState;
         };
 
         class EXTERNAL WsMsgJob : public RefCountedDispatchJob<AppGatewayResponderImplementation>
@@ -372,7 +382,7 @@ namespace Plugin {
         void BeginShutdown();
 
     private:
-        void CompleteJob();
+        static void CompleteJob(const std::shared_ptr<ShutdownState>& shutdownState);
         bool QueueWorkerJob(const std::function<Core::ProxyType<Core::IDispatch>()>& jobFactory);
 
         void ReturnMessageInSocket(const uint32_t connectionId, const int requestId, const string payload);
@@ -388,10 +398,7 @@ namespace Plugin {
         mutable Core::CriticalSection mConnectionStatusImplLock;
         std::list<Exchange::IAppGatewayResponder::INotification*> mConnectionStatusNotification;
         bool mEnhancedLoggingEnabled;
-        std::atomic<bool> mStopping{false};
-        std::atomic<uint32_t> mActiveJobs{0};
-        std::mutex mShutdownMutex;
-        std::condition_variable mShutdownCv;
+        std::shared_ptr<ShutdownState> mShutdownState;
         CompliantJsonRpcRegistry mCompliantJsonRpcRegistry;
         DebugDisabledConnectionsRegistry mDebugDisabledConnectionsRegistry;
     };

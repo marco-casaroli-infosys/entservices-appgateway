@@ -44,7 +44,8 @@ namespace WPEFramework
             mAuthenticator(nullptr),
             mResolver(nullptr),
             mConnectionStatusImplLock(),
-            mEnhancedLoggingEnabled(false)
+            mEnhancedLoggingEnabled(false),
+            mShutdownState(std::make_shared<ShutdownState>())
         {
             LOGINFO("AppGatewayResponderImplementation constructor");
 #ifdef ENABLE_APP_GATEWAY_AUTOMATION
@@ -58,7 +59,9 @@ namespace WPEFramework
 
         AppGatewayResponderImplementation::~AppGatewayResponderImplementation()
         {
-            mStopping.store(true, std::memory_order_release);
+            if (mShutdownState != nullptr) {
+                mShutdownState->stopping.store(true, std::memory_order_release);
+            }
             LOGINFO("AppGatewayResponderImplementation destructor");
             
             // Clear WebSocket handlers before destruction to prevent use-after-free
@@ -89,33 +92,47 @@ namespace WPEFramework
 
         void AppGatewayResponderImplementation::BeginShutdown()
         {
-            {
-                std::lock_guard<std::mutex> lock(mShutdownMutex);
-                mStopping.store(true, std::memory_order_release);
+            auto shutdownState = mShutdownState;
+            if (shutdownState == nullptr) {
+                return;
             }
 
-            std::unique_lock<std::mutex> lock(mShutdownMutex);
-            mShutdownCv.wait(lock, [this]() {
-                return (0 == mActiveJobs.load(std::memory_order_acquire));
+            {
+                std::lock_guard<std::mutex> lock(shutdownState->mutex);
+                shutdownState->stopping.store(true, std::memory_order_release);
+            }
+
+            std::unique_lock<std::mutex> lock(shutdownState->mutex);
+            shutdownState->cv.wait(lock, [shutdownState]() {
+                return (0 == shutdownState->activeJobs.load(std::memory_order_acquire));
             });
         }
 
-        void AppGatewayResponderImplementation::CompleteJob()
+        void AppGatewayResponderImplementation::CompleteJob(const std::shared_ptr<ShutdownState>& shutdownState)
         {
-            if (1 == mActiveJobs.fetch_sub(1, std::memory_order_acq_rel)) {
-                std::lock_guard<std::mutex> lock(mShutdownMutex);
-                mShutdownCv.notify_all();
+            if (shutdownState == nullptr) {
+                return;
+            }
+
+            if (1 == shutdownState->activeJobs.fetch_sub(1, std::memory_order_acq_rel)) {
+                std::lock_guard<std::mutex> lock(shutdownState->mutex);
+                shutdownState->cv.notify_all();
             }
         }
 
         bool AppGatewayResponderImplementation::QueueWorkerJob(const std::function<Core::ProxyType<Core::IDispatch>()>& jobFactory)
         {
-            std::unique_lock<std::mutex> lock(mShutdownMutex);
-            if (mStopping.load(std::memory_order_acquire)) {
+            auto shutdownState = mShutdownState;
+            if (shutdownState == nullptr) {
                 return false;
             }
 
-            mActiveJobs.fetch_add(1, std::memory_order_acq_rel);
+            std::unique_lock<std::mutex> lock(shutdownState->mutex);
+            if (shutdownState->stopping.load(std::memory_order_acquire)) {
+                return false;
+            }
+
+            shutdownState->activeJobs.fetch_add(1, std::memory_order_acq_rel);
             auto job = jobFactory();
             lock.unlock();
             Core::IWorkerPool::Instance().Submit(job);
@@ -164,7 +181,7 @@ namespace WPEFramework
             mWsManager.SetMessageHandler(
                 [this](const std::string &method, const std::string &params, const int requestId, const uint32_t connectionId)
                 {
-                    if (mStopping.load(std::memory_order_acquire)) {
+                    if (mShutdownState->stopping.load(std::memory_order_acquire)) {
                         return;
                     }
                     QueueWorkerJob([this, method, params, requestId, connectionId]() {
@@ -275,7 +292,7 @@ namespace WPEFramework
 
         Core::hresult AppGatewayResponderImplementation::Respond(const Context& context, const string& payload)
         {
-            if (mStopping.load(std::memory_order_acquire)) {
+            if (mShutdownState->stopping.load(std::memory_order_acquire)) {
                 return Core::ERROR_NONE;
             }
             QueueWorkerJob([this, context, payload]() {
@@ -286,7 +303,7 @@ namespace WPEFramework
 
         Core::hresult AppGatewayResponderImplementation::Emit(const Context& context /* @in */, 
                 const string& method /* @in */, const string& payload /* @in @opaque */) {
-            if (mStopping.load(std::memory_order_acquire)) {
+            if (mShutdownState->stopping.load(std::memory_order_acquire)) {
                 return Core::ERROR_NONE;
             }
             // check if the connection is compliant with JSON RPC
@@ -305,7 +322,7 @@ namespace WPEFramework
 
         Core::hresult AppGatewayResponderImplementation::Request(const uint32_t connectionId /* @in */, 
                 const uint32_t id /* @in */, const string& method /* @in */, const string& params /* @in @opaque */) {
-            if (mStopping.load(std::memory_order_acquire)) {
+            if (mShutdownState->stopping.load(std::memory_order_acquire)) {
                 return Core::ERROR_NONE;
             }
             QueueWorkerJob([this, connectionId, id, method, params]() {

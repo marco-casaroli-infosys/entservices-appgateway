@@ -265,6 +265,59 @@ static TestAppGatewayResponderImplementation& StableAsyncResponder()
     return holder.responder;
 }
 
+class ShutdownTrackingResponder final : public TestAppGatewayResponderImplementation {
+public:
+    mutable std::atomic<bool> releaseSawZeroActiveJobs{false};
+
+    uint32_t AddRef() const override { return 1; }
+    uint32_t Release() const override
+    {
+        if (mShutdownState->activeJobs.load(std::memory_order_acquire) == 0u) {
+            releaseSawZeroActiveJobs.store(true, std::memory_order_release);
+        }
+        return Core::ERROR_NONE;
+    }
+};
+
+class BlockingDispatchJob final : public Core::IDispatch {
+public:
+    static Core::ProxyType<BlockingDispatchJob> Create(std::atomic<bool>& started,
+                                                     std::atomic<bool>& release,
+                                                     std::mutex& mutex,
+                                                     std::condition_variable& cv)
+    {
+        return Core::ProxyType<BlockingDispatchJob>::Create(started, release, mutex, cv);
+    }
+
+    BlockingDispatchJob(std::atomic<bool>& started,
+                        std::atomic<bool>& release,
+                        std::mutex& mutex,
+                        std::condition_variable& cv)
+        : mStarted(started)
+        , mRelease(release)
+        , mMutex(mutex)
+        , mCv(cv)
+    {
+    }
+
+    void Dispatch() override
+    {
+        mStarted.store(true, std::memory_order_release);
+        mCv.notify_all();
+
+        std::unique_lock<std::mutex> lock(mMutex);
+        mCv.wait(lock, [this]() {
+            return mRelease.load(std::memory_order_acquire);
+        });
+    }
+
+private:
+    std::atomic<bool>& mStarted;
+    std::atomic<bool>& mRelease;
+    std::mutex& mMutex;
+    std::condition_variable& mCv;
+};
+
 } // namespace
 
 // -----------------------------------------------------------------------------
@@ -924,6 +977,50 @@ TEST(AppGatewayPluginTest, AppGatewayResponderImplementation_RespondEmitAndReque
     EXPECT_EQ(Core::ERROR_NONE, responder.Emit(ctx, "device.event", R"({"v":1})"));
     EXPECT_EQ(Core::ERROR_NONE, responder.Request(1001, 77, "method.name", "{}"));
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+}
+
+TEST(AppGatewayPluginTest, AppGatewayResponderImplementation_ShutdownBarrier_WaitsUntilJobReleaseCompletes)
+{
+    ShutdownTrackingResponder responder;
+    std::mutex jobMutex;
+    std::condition_variable jobCv;
+    std::atomic<bool> jobStarted{false};
+    std::atomic<bool> releaseJob{false};
+    std::atomic<bool> shutdownCompleted{false};
+
+    ASSERT_TRUE(responder.QueueWorkerJob([&]() {
+        return Core::ProxyType<Core::IDispatch>(
+            Core::ProxyType<BlockingDispatchJob>::Create(jobStarted, releaseJob, jobMutex, jobCv));
+    }));
+
+    std::unique_lock<std::mutex> startLock(jobMutex);
+    ASSERT_TRUE(jobCv.wait_for(startLock, std::chrono::seconds(2), [&]() {
+        return jobStarted.load(std::memory_order_acquire);
+    }));
+
+    std::thread shutdownThread([&]() {
+        responder.BeginShutdown();
+        shutdownCompleted.store(true, std::memory_order_release);
+    });
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (!responder.mShutdownState->stopping.load(std::memory_order_acquire) &&
+           std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::yield();
+    }
+
+    EXPECT_TRUE(responder.mShutdownState->stopping.load(std::memory_order_acquire));
+    EXPECT_EQ(Core::ERROR_NONE, responder.Request(123, 456, "blocked.method", "{}"));
+    EXPECT_EQ(1u, responder.mShutdownState->activeJobs.load(std::memory_order_acquire));
+
+    releaseJob.store(true, std::memory_order_release);
+    jobCv.notify_all();
+
+    shutdownThread.join();
+
+    EXPECT_TRUE(shutdownCompleted.load(std::memory_order_acquire));
+    EXPECT_FALSE(responder.releaseSawZeroActiveJobs.load(std::memory_order_acquire));
+    EXPECT_EQ(0u, responder.mShutdownState->activeJobs.load(std::memory_order_acquire));
 }
 
 TEST(AppGatewayPluginTest, AppGatewayResponderImplementation_Emit_CompliantAndNonCompliantBothReturnNone)
