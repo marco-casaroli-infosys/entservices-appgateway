@@ -18,6 +18,7 @@
  */
 
 #include "AppGateway.h"
+#include "AppGatewayResponderImplementation.h"
 #include "AppGatewayTelemetry.h"
 #include <interfaces/IConfiguration.h>
 #include <interfaces/json/JsonData_AppGatewayResolver.h>
@@ -150,6 +151,8 @@ namespace Plugin {
         LOGINFO("AppGatewayTelemetry deinitialized");
 
         if (mResponder != nullptr) {
+            auto responderImplementation = static_cast<AppGatewayResponderImplementation*>(mResponder);
+            responderImplementation->BeginShutdown();
             result = mResponder->Release();
             mResponder = nullptr;
 

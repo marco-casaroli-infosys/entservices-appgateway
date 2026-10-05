@@ -27,6 +27,8 @@
 #include <com/com.h>
 #include <core/core.h>
 #include <atomic>
+#include <condition_variable>
+#include <functional>
 #include <map>
 #include <unordered_set>
 #include <sstream>
@@ -87,6 +89,7 @@ namespace Plugin {
 
                 ~RefCountedDispatchJob() override
                 {
+                    mParent.CompleteJob();
                     mParent.Release();
                 }
 
@@ -365,6 +368,9 @@ namespace Plugin {
             const uint32_t requestId,
             const uint32_t connectionId);
 
+        void BeginShutdown();
+        void CompleteJob();
+        bool QueueWorkerJob(const std::function<Core::ProxyType<Core::IDispatch>()>& jobFactory);
 
         void ReturnMessageInSocket(const uint32_t connectionId, const int requestId, const string payload);
 
@@ -380,6 +386,9 @@ namespace Plugin {
         std::list<Exchange::IAppGatewayResponder::INotification*> mConnectionStatusNotification;
         bool mEnhancedLoggingEnabled;
         std::atomic<bool> mStopping{false};
+        std::atomic<uint32_t> mActiveJobs{0};
+        std::mutex mShutdownMutex;
+        std::condition_variable mShutdownCv;
         CompliantJsonRpcRegistry mCompliantJsonRpcRegistry;
         DebugDisabledConnectionsRegistry mDebugDisabledConnectionsRegistry;
     };

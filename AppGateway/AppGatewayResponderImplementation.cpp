@@ -87,6 +87,41 @@ namespace WPEFramework
 
         }
 
+        void AppGatewayResponderImplementation::BeginShutdown()
+        {
+            {
+                std::lock_guard<std::mutex> lock(mShutdownMutex);
+                mStopping.store(true, std::memory_order_release);
+            }
+
+            std::unique_lock<std::mutex> lock(mShutdownMutex);
+            mShutdownCv.wait(lock, [this]() {
+                return (mActiveJobs.load(std::memory_order_acquire) == 0);
+            });
+        }
+
+        void AppGatewayResponderImplementation::CompleteJob()
+        {
+            if (mActiveJobs.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+                std::lock_guard<std::mutex> lock(mShutdownMutex);
+                mShutdownCv.notify_all();
+            }
+        }
+
+        bool AppGatewayResponderImplementation::QueueWorkerJob(const std::function<Core::ProxyType<Core::IDispatch>()>& jobFactory)
+        {
+            std::unique_lock<std::mutex> lock(mShutdownMutex);
+            if (mStopping.load(std::memory_order_acquire)) {
+                return false;
+            }
+
+            mActiveJobs.fetch_add(1, std::memory_order_acq_rel);
+            auto job = jobFactory();
+            lock.unlock();
+            Core::IWorkerPool::Instance().Submit(job);
+            return true;
+        }
+
         uint32_t AppGatewayResponderImplementation::Configure(PluginHost::IShell *shell)
         {
             LOGINFO("Configuring AppGatewayResponderImplementation");
@@ -132,7 +167,9 @@ namespace WPEFramework
                     if (mStopping.load(std::memory_order_acquire)) {
                         return;
                     }
-                    Core::IWorkerPool::Instance().Submit(WsMsgJob::Create(this, method, params, requestId, connectionId));
+                    QueueWorkerJob([this, method, params, requestId, connectionId]() {
+                        return WsMsgJob::Create(this, method, params, requestId, connectionId);
+                    });
                 });
 
             mWsManager.SetAuthHandler(
@@ -184,7 +221,9 @@ namespace WPEFramework
                         #endif
                         #endif
                         
-                        Core::IWorkerPool::Instance().Submit(ConnectionStatusNotificationJob::Create(this, connectionId, appId, true));
+                        QueueWorkerJob([this, connectionId, appId]() {
+                            return ConnectionStatusNotificationJob::Create(this, connectionId, appId, true);
+                        });
 
                         return true;
                     }
@@ -213,7 +252,9 @@ namespace WPEFramework
                     AppGatewayTelemetry::getInstance().DecrementWebSocketConnections(context);
                     
                     if (appId != "UNKNOWN") {
-                        Core::IWorkerPool::Instance().Submit(ConnectionStatusNotificationJob::Create(this, connectionId, appId, false));
+                        QueueWorkerJob([this, connectionId, appId]() {
+                            return ConnectionStatusNotificationJob::Create(this, connectionId, appId, false);
+                        });
                     }
                     
                     mAppIdRegistry.Remove(connectionId);
@@ -237,7 +278,9 @@ namespace WPEFramework
             if (mStopping.load(std::memory_order_acquire)) {
                 return Core::ERROR_NONE;
             }
-            Core::IWorkerPool::Instance().Submit(RespondJob::Create(this, context.connectionId, context.requestId, payload));
+            QueueWorkerJob([this, context, payload]() {
+                return RespondJob::Create(this, context.connectionId, context.requestId, payload);
+            });
             return Core::ERROR_NONE;
         }
 
@@ -248,10 +291,14 @@ namespace WPEFramework
             }
             // check if the connection is compliant with JSON RPC
             if (mCompliantJsonRpcRegistry.IsCompliantJsonRpc(context.connectionId)) {
-                Core::IWorkerPool::Instance().Submit(EmitJob::Create(this, context.connectionId, method, payload));
+                QueueWorkerJob([this, context, method, payload]() {
+                    return EmitJob::Create(this, context.connectionId, method, payload);
+                });
             }
             else {
-                Core::IWorkerPool::Instance().Submit(RespondJob::Create(this, context.connectionId, context.requestId, payload));
+                QueueWorkerJob([this, context, payload]() {
+                    return RespondJob::Create(this, context.connectionId, context.requestId, payload);
+                });
             }
             return Core::ERROR_NONE;
         }
@@ -261,7 +308,9 @@ namespace WPEFramework
             if (mStopping.load(std::memory_order_acquire)) {
                 return Core::ERROR_NONE;
             }
-            Core::IWorkerPool::Instance().Submit(RequestJob::Create(this, connectionId, id, method, params));
+            QueueWorkerJob([this, connectionId, id, method, params]() {
+                return RequestJob::Create(this, connectionId, id, method, params);
+            });
             return Core::ERROR_NONE;
         }
 
