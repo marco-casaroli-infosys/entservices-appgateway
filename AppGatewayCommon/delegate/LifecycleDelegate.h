@@ -1015,6 +1015,11 @@ class LifecycleDelegate : public BaseEventDelegate
             Dispatch("Lifecycle2.onStateChanged", lifecyclePayload, appId);
         }
 
+        // Dispatch Lifecycle 1 events before suspension so they are not dropped
+        // by the traffic gate. This ensures compatibility events like Lifecycle.onSuspended
+        // are delivered even when the app is entering HIBERNATED state.
+        HandleLifecycle1Update(appInstanceId, oldLifecycleState, newLifecycleState);
+
         // Suspension is best-effort: lifecycle processing continues if the guard
         // was unavailable during plugin startup or lazy acquisition.
         if (needsSuspend && nullptr != guardRef) {
@@ -1035,8 +1040,6 @@ class LifecycleDelegate : public BaseEventDelegate
         if (bIntentUpdated) {
             DispatchLastKnownIntent(appId);
         }
-
-        HandleLifecycle1Update(appInstanceId, oldLifecycleState, newLifecycleState);
     }
 
     

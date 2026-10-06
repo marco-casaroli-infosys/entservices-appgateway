@@ -238,9 +238,22 @@ namespace WPEFramework
             return Core::ERROR_NONE;
         }
 
-        Core::hresult AppGatewayResponderImplementation::Emit(const Context& context /* @in */, 
+        Core::hresult AppGatewayResponderImplementation::Emit(const Context& context /* @in */,
                 const string& method /* @in */, const string& payload /* @in @opaque */) {
-            if (mPausedAppsRegistry.IsPaused(context.appId)) {
+            // Bypass the paused-state check for the HIBERNATED lifecycle transition event.
+            // This ensures the app receives the state-change notification even when
+            // the event is queued after SuspendTraffic() completes.
+            bool isHibernatedTransition = false;
+            if (method == "Lifecycle2.onStateChanged") {
+                // Parse the payload to check if newState is "hibernated"
+                // Expected payload format: {"newState":"hibernated",...}
+                const std::string hibernatedState = "\"newState\":\"hibernated\"";
+                if (payload.find(hibernatedState) != std::string::npos) {
+                    isHibernatedTransition = true;
+                }
+            }
+
+            if (!isHibernatedTransition && mPausedAppsRegistry.IsPaused(context.appId)) {
                 LOGDBG("Emit: dropping outgoing notification for hibernated appId=%s", context.appId.c_str());
                 return Core::ERROR_NONE;
             }
