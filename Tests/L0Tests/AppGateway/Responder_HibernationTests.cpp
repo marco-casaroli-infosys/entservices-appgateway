@@ -388,3 +388,124 @@ uint32_t Test_Responder_SessionGuard_Via_Interface_Pointer()
 
     return tr.failures;
 }
+
+// ---------------------------------------------------------------------------
+// Test: HIBERNATED lifecycle event bypass - Lifecycle2.onStateChanged with
+// newState=hibernated passes through even when the app is paused.
+// This tests the IsHibernatedLifecycleEvent() helper and the bypass logic
+// in both Emit() entry point and DispatchNotificationToConnectionIfNotPaused().
+// ---------------------------------------------------------------------------
+// PUBLIC_INTERFACE
+uint32_t Test_Responder_HibernatedEventBypass_PassesWhilePaused()
+{
+    TestResult tr;
+
+    WPEFramework::Core::Sink<WPEFramework::Plugin::AppGatewayResponderImplementation> responder;
+
+    const std::string appId  = "com.example.app.hibernated";
+    const GatewayContext ctx = MakeCtx(30, 80, appId);
+
+    // Suspend the app
+    responder.SuspendTraffic(appId);
+
+    // Normal event should be dropped while paused
+    ExpectEqU32(tr,
+                responder.Emit(ctx, "event.normal", R"({"dropped":true})"),
+                ERROR_NONE,
+                "Normal event while suspended returns ERROR_NONE (drop path)");
+
+    DrainJobs();
+
+    // HIBERNATED lifecycle event should bypass the pause check
+    // Payload format from GetLifecycle2StateJson: [{"oldState":"...","newState":"hibernated"}]
+    const std::string hibernatedPayload = R"([{"oldState":"active","newState":"hibernated"}])";
+    ExpectEqU32(tr,
+                responder.Emit(ctx, "Lifecycle2.onStateChanged", hibernatedPayload),
+                ERROR_NONE,
+                "HIBERNATED lifecycle event while suspended returns ERROR_NONE (bypass path)");
+
+    DrainJobs();
+
+    // Verify other lifecycle states are still dropped
+    const std::string suspendedPayload = R"([{"oldState":"active","newState":"suspended"}])";
+    ExpectEqU32(tr,
+                responder.Emit(ctx, "Lifecycle2.onStateChanged", suspendedPayload),
+                ERROR_NONE,
+                "SUSPENDED lifecycle event while suspended returns ERROR_NONE (drop path)");
+
+    DrainJobs();
+
+    // Resume
+    responder.ResumeTraffic(appId);
+
+    return tr.failures;
+}
+
+// ---------------------------------------------------------------------------
+// Test: JSON array parsing for lifecycle state payload.
+// Verifies that the IsHibernatedLifecycleEvent() helper correctly parses
+// the JSON array format produced by GetLifecycle2StateJson().
+// ---------------------------------------------------------------------------
+// PUBLIC_INTERFACE
+uint32_t Test_Responder_HibernatedEvent_JSONArrayParsing()
+{
+    TestResult tr;
+
+    WPEFramework::Core::Sink<WPEFramework::Plugin::AppGatewayResponderImplementation> responder;
+
+    const std::string appId  = "com.example.app.jsonparse";
+    const GatewayContext ctx = MakeCtx(31, 81, appId);
+
+    // Suspend the app
+    responder.SuspendTraffic(appId);
+
+    // Valid HIBERNATED payload in array format
+    const std::string validHibernated = R"([{"oldState":"active","newState":"hibernated"}])";
+    ExpectEqU32(tr,
+                responder.Emit(ctx, "Lifecycle2.onStateChanged", validHibernated),
+                ERROR_NONE,
+                "Valid HIBERNATED array payload bypasses pause check");
+
+    DrainJobs();
+
+    // Invalid JSON (not an array) - should be dropped
+    const std::string invalidFormat = R"({"oldState":"active","newState":"hibernated"})";
+    ExpectEqU32(tr,
+                responder.Emit(ctx, "Lifecycle2.onStateChanged", invalidFormat),
+                ERROR_NONE,
+                "Invalid format (object instead of array) is dropped while paused");
+
+    DrainJobs();
+
+    // Empty array - should be dropped
+    const std::string emptyArray = R"([])";
+    ExpectEqU32(tr,
+                responder.Emit(ctx, "Lifecycle2.onStateChanged", emptyArray),
+                ERROR_NONE,
+                "Empty array is dropped while paused");
+
+    DrainJobs();
+
+    // Array with wrong state - should be dropped
+    const std::string wrongState = R"([{"oldState":"active","newState":"suspended"}])";
+    ExpectEqU32(tr,
+                responder.Emit(ctx, "Lifecycle2.onStateChanged", wrongState),
+                ERROR_NONE,
+                "Array with non-hibernated state is dropped while paused");
+
+    DrainJobs();
+
+    // Array with missing newState field - should be dropped
+    const std::string missingField = R"([{"oldState":"active"}])";
+    ExpectEqU32(tr,
+                responder.Emit(ctx, "Lifecycle2.onStateChanged", missingField),
+                ERROR_NONE,
+                "Array with missing newState field is dropped while paused");
+
+    DrainJobs();
+
+    // Resume
+    responder.ResumeTraffic(appId);
+
+    return tr.failures;
+}

@@ -85,6 +85,8 @@ extern uint32_t Test_Responder_Emit_DropsWhilePaused_ResumesAfterResume();
 extern uint32_t Test_Responder_Request_ReturnsNone_WhilePaused();
 extern uint32_t Test_Responder_SuspendResume_MultipleApps_Independent();
 extern uint32_t Test_Responder_SessionGuard_Via_Interface_Pointer();
+extern uint32_t Test_Responder_HibernatedEventBypass_PassesWhilePaused();
+extern uint32_t Test_Responder_HibernatedEvent_JSONArrayParsing();
 
 // AppGatewayTelemetry coverage tests
 extern uint32_t Test_Telemetry_SettersAndConfig();
@@ -512,6 +514,8 @@ int main()
         { "Responder_Request_ReturnsNone_WhilePaused", Test_Responder_Request_ReturnsNone_WhilePaused },
         { "Responder_SuspendResume_MultipleApps_Independent", Test_Responder_SuspendResume_MultipleApps_Independent },
         { "Responder_SessionGuard_Via_Interface_Pointer", Test_Responder_SessionGuard_Via_Interface_Pointer },
+        { "Responder_HibernatedEventBypass_PassesWhilePaused", Test_Responder_HibernatedEventBypass_PassesWhilePaused },
+        { "Responder_HibernatedEvent_JSONArrayParsing", Test_Responder_HibernatedEvent_JSONArrayParsing },
 
         // AppGatewayTelemetry coverage tests
         { "Telemetry_SettersAndConfig", Test_Telemetry_SettersAndConfig },
