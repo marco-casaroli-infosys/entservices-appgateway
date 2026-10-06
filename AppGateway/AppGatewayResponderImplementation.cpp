@@ -26,6 +26,7 @@
 #include "UtilsConnections.h"
 #include "UtilsCallsign.h"
 #include <interfaces/IAppNotifications.h>
+#include <core/JSON.h>
 
 // App Gateway is only available via local connections,
 // so we can use a simple in-memory registry to track connection IDs and their associated app IDs.
@@ -36,6 +37,36 @@ namespace WPEFramework
 {
     namespace Plugin
     {
+        // Lifecycle state string constants
+        // These must match the output of LifecycleStateToString() in AppGatewayCommon/delegate/LifecycleDelegate.h
+        namespace LifecycleStateStrings {
+            constexpr const char* ON_STATE_CHANGED = "Lifecycle2.onStateChanged";
+            constexpr const char* NEW_STATE_FIELD = "newState";
+            constexpr const char* HIBERNATED = "hibernated";
+        }
+
+        // Helper function to check if an event is a HIBERNATED lifecycle transition.
+        // This is used to bypass the paused-state check for HIBERNATED state-change events
+        // so they are delivered even when queued after SuspendTraffic() completes.
+        static bool IsHibernatedLifecycleEvent(const string& method, const string& payload) {
+            if (LifecycleStateStrings::ON_STATE_CHANGED != method) {
+                return false;
+            }
+
+            // Parse the JSON payload to extract the newState field
+            JsonObject json;
+            if (!json.FromString(payload)) {
+                return false;
+            }
+
+            Core::JSON::Variant newState = json.Get(LifecycleStateStrings::NEW_STATE_FIELD);
+            string newStateStr = newState.String();
+
+            // Compare against the canonical string representation of HIBERNATED state
+            // This matches the output of LifecycleStateToString(Exchange::ILifecycleManager::HIBERNATED)
+            return (LifecycleStateStrings::HIBERNATED == newStateStr);
+        }
+
         SERVICE_REGISTRATION(AppGatewayResponderImplementation, 1, 0, 0);
 
         AppGatewayResponderImplementation::AppGatewayResponderImplementation()
@@ -240,7 +271,13 @@ namespace WPEFramework
 
         Core::hresult AppGatewayResponderImplementation::Emit(const Context& context /* @in */,
                 const string& method /* @in */, const string& payload /* @in @opaque */) {
-            if (mPausedAppsRegistry.IsPaused(context.appId)) {
+            // Bypass the paused-state check for the HIBERNATED lifecycle transition event.
+            // This ensures the event passes through the entry-point gate even when queued
+            // after SuspendTraffic() completes. The wrapper also has this bypass to handle
+            // the socket-write boundary check.
+            const bool isHibernatedTransition = IsHibernatedLifecycleEvent(method, payload);
+
+            if (!isHibernatedTransition && mPausedAppsRegistry.IsPaused(context.appId)) {
                 LOGDBG("Emit: dropping outgoing notification for hibernated appId=%s", context.appId.c_str());
                 return Core::ERROR_NONE;
             }
@@ -433,13 +470,7 @@ namespace WPEFramework
 
             // Bypass the paused-state check for the HIBERNATED lifecycle transition event.
             // This ensures the event reaches the WebSocket even if queued after SuspendTraffic().
-            bool isHibernatedTransition = false;
-            if ("Lifecycle2.onStateChanged" == designator) {
-                const std::string hibernatedState = "\"newState\":\"hibernated\"";
-                if (std::string::npos != payload.find(hibernatedState)) {
-                    isHibernatedTransition = true;
-                }
-            }
+            const bool isHibernatedTransition = IsHibernatedLifecycleEvent(designator, payload);
 
             if (!isHibernatedTransition && isPaused) {
                 LOGDBG("DispatchNotificationToConnectionIfNotPaused: dropping notification for hibernated appId=%s", appId.c_str());
