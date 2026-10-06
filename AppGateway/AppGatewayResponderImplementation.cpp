@@ -53,12 +53,19 @@ namespace WPEFramework
                 return false;
             }
 
-            // Parse the JSON payload to extract the newState field
-            JsonObject json;
-            if (!json.FromString(payload)) {
+            // Parse the JSON payload as an array (GetLifecycle2StateJson produces an array)
+            // Format: [{"oldState":"...","newState":"..."}]
+            JsonArray jsonArray;
+            if (!jsonArray.FromString(payload)) {
                 return false;
             }
 
+            // Get the first (and only) object from the array
+            if (jsonArray.Length() == 0) {
+                return false;
+            }
+
+            JsonObject json = jsonArray[0].Object();
             Core::JSON::Variant newState = json.Get(LifecycleStateStrings::NEW_STATE_FIELD);
             string newStateStr = newState.String();
 
