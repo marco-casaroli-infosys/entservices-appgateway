@@ -151,7 +151,7 @@ namespace Plugin {
             }
             virtual void Dispatch()
             {
-                mParent.ReturnMessageInSocket(mConnectionId, mRequestId, mPayload);
+                mParent.DispatchResponseToConnectionIfNotPaused(mConnectionId, mRequestId, mPayload);
             }
 
         private:
@@ -191,7 +191,7 @@ namespace Plugin {
             }
             virtual void Dispatch()
             {
-                mParent.mWsManager.DispatchNotificationToConnection(mConnectionId, mDesignator, mPayload);
+                mParent.DispatchNotificationToConnectionIfNotPaused(mConnectionId, mDesignator, mPayload);
             }
 
         private:
@@ -232,7 +232,7 @@ namespace Plugin {
             }
             virtual void Dispatch()
             {
-                mParent.mWsManager.SendRequestToConnection(mConnectionId, mDesignator, mRequestId, mPayload);
+                mParent.SendRequestToConnectionIfNotPaused(mConnectionId, mDesignator, mRequestId, mPayload);
             }
 
         private:
@@ -381,8 +381,11 @@ namespace Plugin {
             const uint32_t requestId,
             const uint32_t connectionId);
 
-
         void ReturnMessageInSocket(const uint32_t connectionId, const int requestId, const string payload);
+
+        bool DispatchResponseToConnectionIfNotPaused(const uint32_t connectionId, const uint32_t requestId, const string& result);
+        bool DispatchNotificationToConnectionIfNotPaused(const uint32_t connectionId, const string& designator, const string& payload);
+        bool SendRequestToConnectionIfNotPaused(const uint32_t connectionId, const string& designator, const uint32_t requestId, const string& params);
 
         // Thread-safe registry tracking appIds whose WebSocket traffic is currently paused
         // (i.e., the application is in the HIBERNATED lifecycle state).

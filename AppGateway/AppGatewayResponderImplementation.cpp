@@ -405,6 +405,49 @@ namespace WPEFramework
             mWsManager.SendMessageToConnection(connectionId, payload, requestId);
         }
 
+        bool AppGatewayResponderImplementation::DispatchResponseToConnectionIfNotPaused(
+            const uint32_t connectionId,
+            const uint32_t requestId,
+            const string& result)
+        {
+            string appId;
+            if (mAppIdRegistry.Get(connectionId, appId) &&
+                mPausedAppsRegistry.IsPaused(appId)) {
+                LOGDBG("DispatchResponseToConnectionIfNotPaused: dropping response for hibernated appId=%s", appId.c_str());
+                return false;
+            }
+            return mWsManager.SendMessageToConnection(connectionId, result, requestId);
+        }
+
+        bool AppGatewayResponderImplementation::DispatchNotificationToConnectionIfNotPaused(
+            const uint32_t connectionId,
+            const string& designator,
+            const string& payload)
+        {
+            string appId;
+            if (mAppIdRegistry.Get(connectionId, appId) &&
+                mPausedAppsRegistry.IsPaused(appId)) {
+                LOGDBG("DispatchNotificationToConnectionIfNotPaused: dropping notification for hibernated appId=%s", appId.c_str());
+                return false;
+            }
+            return mWsManager.DispatchNotificationToConnection(connectionId, designator, payload);
+        }
+
+        bool AppGatewayResponderImplementation::SendRequestToConnectionIfNotPaused(
+            const uint32_t connectionId,
+            const string& designator,
+            const uint32_t requestId,
+            const string& params)
+        {
+            string appId;
+            if (mAppIdRegistry.Get(connectionId, appId) &&
+                mPausedAppsRegistry.IsPaused(appId)) {
+                LOGDBG("SendRequestToConnectionIfNotPaused: dropping request for hibernated appId=%s", appId.c_str());
+                return false;
+            }
+            return mWsManager.SendRequestToConnection(connectionId, designator, requestId, params);
+        }
+
         Core::hresult AppGatewayResponderImplementation::Register(Exchange::IAppGatewayResponder::INotification *notification)
         {
             ASSERT (nullptr != notification);
