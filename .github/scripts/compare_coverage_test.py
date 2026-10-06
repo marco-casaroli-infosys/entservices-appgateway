@@ -963,10 +963,18 @@ class TestL2CoverageIntegration(unittest.TestCase):
         l0 = self._lcov("l0.info", 100, 80)
         l1 = self._lcov("l1.info", 100, 80)
         l2 = self._lcov("l2.info", 100, 80)  # 80 % < 90 % baseline, but >= threshold
-        r = self._run("--baseline", bl, "--l0", l0, "--l1", l1, "--l2", l2)
+        out = os.path.join(self.tmp, "new-baseline-regression.json")
+        r = self._run(
+            "--baseline", bl,
+            "--l0", l0, "--l1", l1, "--l2", l2,
+            "--output-json", out,
+        )
         self.assertEqual(r.returncode, 0, msg=r.stdout + r.stderr)
         self.assertIn("[WARN]", r.stdout)
         self.assertIn("dropped from baseline", r.stdout)
+        self.assertTrue(os.path.isfile(out), "L2 regression warning must not block baseline output")
+        with open(out) as fh:
+            self.assertEqual(json.load(fh)["L2"], 80.0)
 
     # --- Scenario: L2 artifact absent (job failed) → WARN, L0/L1 unaffected -----
 
