@@ -15,7 +15,7 @@ Before generating mocks, complete this verification checklist:
 
 1. **List ALL build dependencies** from CMakeLists.txt (`find_package`, `target_link_libraries`)
 2. **For EACH build dependency, verify**:
-   - [ ] Does a wrapper file exist? (e.g., `Iarm.h`, `devicesettings.h`)
+   - [ ] Does a wrapper file exist? (e.g., `Iarm.h`, `dependency wrapper`)
    - [ ] Does the wrapper define `*Impl` interfaces?
    - [ ] Does a corresponding `*Mock.h` file exist with `MOCK_METHOD` declarations?
    - [ ] **If wrapper exists but mock doesn't → ADD TO GENERATION LIST**
@@ -24,11 +24,11 @@ Before generating mocks, complete this verification checklist:
    - [ ] Identify ALL external API calls (direct dependencies)
    - [ ] **CRITICAL: Identify ALL returned objects from external APIs**
    - [ ] **CRITICAL: Trace what methods are called ON those returned objects**
-   - [ ] Example: `Host::getInstance().getPort(...)` returns `Port` object → then `port.getDisplay()` is called → **Both need mocks**
+   - [ ] Example: `Api::getObject(...)` returns an object, then `object.getStatus()` is called → **Both need mocks**
    - [ ] **BOTH the getter interface AND the returned object type need mocks**
 5. **For EACH identified dependency** (from steps 1-4), verify corresponding mock exists:
-   - [ ] Check for direct API interface mocks (e.g., `HostMock.h`)
-   - [ ] **Check for returned object type mocks** (e.g., `ConnectionImplMock` in `HdmiCecMock.h`, `AudioOutputPortMock.h`)
+   - [ ] Check for direct API interface mocks (e.g., `ManagerMock.h`)
+   - [ ] **Check for returned object type mocks** (e.g., `ConnectionImplMock` in `HdmiCecMock.h`, `ReturnedObjectMock.h`)
    - [ ] If either is missing → ADD TO GENERATION LIST
 
 **CRITICAL**: A wrapper file (like `Iarm.h`) is NOT a mock. You must find or generate a separate `*Mock.h` file with MOCK_METHOD declarations.
@@ -51,12 +51,8 @@ Before generating mocks, complete this verification checklist:
             1. **Level 1: Direct API calls** - Identify the interface/manager being called
             2. **Level 2: Returned object usage** - When APIs return objects, trace what methods are called ON those objects
         - **Common Return-Object Patterns with Concrete Examples**:
-            - **Getter Pattern**: `Manager::getInstance().getObject()` → returns `Object` → `object.method()` is called
-                - Real example: `device::Host::getInstance().getVideoOutputPort(portName)` → returns `VideoOutputPort` → `port.getDisplay()` is called
-                - Level 1 mock needed: `HostImplMock`, Level 2 mock needed: `VideoOutputPortMock`
-            - **List/Collection Pattern**: `Host::getInstance().getList()` → returns `List<Item>` → `list.at(0).itemMethod()` is called
-                - Real example: `device::Host::getInstance().getAudioOutputPorts()` → iterates list → `port.setMuted()` is called on elements
-                - Level 1 mock needed: `HostImplMock`, Level 2 mock needed: `AudioOutputPortMock`
+            - **Getter Pattern**: `Api::getHandle(...)` writes a handle that is passed to `Api::getState(handle, ...)`; mock both API calls and their output values
+            - **List/Collection Pattern**: `Api::getItems(...)` fills a collection whose elements are then used; mock the API call and provide representative items
             - **Factory Pattern**: `Factory.create()` → returns `Product` → `product.operation()` is called
             - **Constructor Pattern**: `Connection(params)` → creates `Connection` object → `connection.open()` / `connection.sendTo()` is called
         - **BOTH the getter interface AND the returned object types must be mocked**
@@ -76,15 +72,15 @@ Before generating mocks, complete this verification checklist:
     - **FIRST: Check if complete mock already exists** - do not regenerate unnecessarily
     - Search `entservices-testframework/Tests/mocks/` directory comprehensively
     - **CRITICAL - Verify a file is actually a mock by checking ALL three criteria**:
-        1. Filename contains "Mock" (e.g., `LibraryMock.h`, `HostMock.h`)
+        1. Filename contains "Mock" (e.g., `LibraryMock.h`, `ManagerMock.h`)
         2. File contains `#include <gmock/gmock.h>`
         3. File contains `MOCK_METHOD(...)` declarations
     - **Files are NOT mocks if they**:
-        - Only define wrapper classes with `*Impl` interfaces (e.g., `Iarm.h`, `devicesettings.h`)
+        - Only define wrapper classes with `*Impl` interfaces (e.g., `Iarm.h`, `dependency wrapper`)
         - Lack gmock includes or MOCK_METHOD declarations
         - Are pure interface definitions without mock implementations
     - **If existing mock found**: Verify it's complete by comparing method count with similar mocks before deciding to regenerate
-    - **CRITICAL DECISION RULE**: If you find a wrapper file (like `Iarm.h` or `devicesettings.h`) that defines `*Impl` interfaces:
+    - **CRITICAL DECISION RULE**: If you find a wrapper file (like `Iarm.h` or `dependency wrapper`) that defines `*Impl` interfaces:
         1. Search for a corresponding mock file (e.g., `IarmBusMock.h`, `IarmMock.h`)
         2. **If NO corresponding mock exists**, you MUST generate the mock
         3. **A wrapper file is NOT a mock file** - it does not meet the 3 criteria above (no "Mock" in filename, no gmock include, no MOCK_METHOD declarations)
@@ -103,7 +99,7 @@ Before generating mocks, complete this verification checklist:
     - Include proper copyright headers matching the repository standard
     
     - **Complete Mock Generation - Critical Steps**:
-        1. **Read the source file FIRST**: Open the wrapper file (e.g., `devicesettings.h`, `Iarm.h`) OR actual header if available, and locate the `*Impl` interface class definition
+        1. **Read the source file FIRST**: Open the wrapper file (e.g., `dependency wrapper`, `Iarm.h`) OR actual header if available, and locate the `*Impl` interface class definition
         2. **Copy ALL methods**: For every virtual method in the interface, create a corresponding MOCK_METHOD declaration with the exact signature
         3. **Match signatures exactly**: Copy return types, parameter types (including references/pointers), and const qualifiers directly - do not guess or assume
         4. **Do not skip methods**: Mock every method in the interface, even if not currently called in the code being tested
@@ -112,7 +108,7 @@ Before generating mocks, complete this verification checklist:
     - **For main interface/API mocks**: Include COM interface methods (AddRef, Release, QueryInterface) when the interface inherits from COM interfaces
     - **For notification/callback mocks**: DO NOT include COM methods (AddRef, Release, QueryInterface) - only mock the actual callback/notification methods
     - **Group related classes in one file** following repository patterns:
-        - **Main class + its event/notification interfaces** go in the same file (e.g., `HostMock.h` contains `HostImplMock` + all `I*EventsImplMock` classes that Host can register)
+        - **Main class + its event/notification interfaces** go in the same file (e.g., `ManagerMock.h` contains `ManagerImplMock` + all `I*EventsImplMock` classes that Manager can register)
         - **Multiple related helper classes from same wrapper** can be in one file (e.g., `HdmiCecMock.h` contains multiple CEC-related class mocks)
         - Check the original wrapper file structure to determine grouping
     - Create notification/callback mocks when the external dependency supports them
@@ -125,13 +121,13 @@ Before generating mocks, complete this verification checklist:
     - Use exact method signatures from the wrapper interface (return types, parameters, const qualifiers, override specifiers)
     - Include any nested classes or enums that tests might need
     - **Add ALL related event/notification interface mocks in the same file** when a main class has event registration methods
-    - Example: If `HostImpl` has `Register(IVideoDeviceEvents*)` method, include `IVideoDeviceEventsImplMock` in `HostMock.h`
+    - Example: If `ManagerImpl` has `Register(IManagerEvents*)` method, include `IManagerEventsImplMock` in `ManagerMock.h`
 
 5. **Output Format**
     - Generate complete, compilable mock header files
     - Use `.h` extension for all mock files
     - Place appropriate include guards or #pragma once
-    - Include the original header file (e.g., `#include "host.hpp"` in `HostMock.h`)
+    - Include the original header file (e.g., `#include "manager.hpp"` in `ManagerMock.h`)
     - Do not include implementation (.cpp) files unless the original has static/global functions
     - Output only the mock code without explanations or summaries
     - Ensure all generated mocks can be included in test files without compilation errors
@@ -143,11 +139,11 @@ Understanding when to group multiple mock classes in one file:
 
 **Pattern 1: Main Class + Event Interfaces**
 - When a main class has `Register()` methods for event listeners, include ALL related event interface mocks in the same file
-- Example: `HostMock.h` contains:
-  - `HostImplMock` (main interface)
-  - `IVideoDeviceEventsImplMock` (because Host has `Register(IVideoDeviceEvents*)`)
-  - `IAudioOutputPortEventsImplMock` (because Host has `Register(IAudioOutputPortEvents*)`)
-  - `IDisplayEventsImplMock`, `IHdmiInEventsImplMock`, etc. (all event interfaces Host can register)
+- Example: `ManagerMock.h` contains:
+  - `ManagerImplMock` (main interface)
+  - `IManagerEventsImplMock` (because Host has `Register(IManagerEvents*)`)
+  - `IManagerEventsImplMock` (because Host has `Register(IManagerEvents*)`)
+  - `IManagerEventsImplMock`, `IManagerEventsImplMock`, etc. (all event interfaces Manager can register)
 
 **Pattern 2: Related Helper Classes**
 - Multiple classes from the same wrapper file that work together
@@ -256,17 +252,15 @@ Modern plugins often have dependencies that must be mocked even if not directly 
 ```cmake
 # These ALL need mocks:
 find_package(IARMBus)          # ← Mock needed: IarmBusMock.h
-find_package(DS)               # ← Mock needed: device settings mocks
 
 target_link_libraries(${PLUGIN_IMPLEMENTATION}
     PRIVATE ${IARMBUS_LIBRARIES}  # ← Must mock
-            ${DS_LIBRARIES}       # ← Must mock
 )
 ```
 
 **Verification:**
-- Check if wrapper files exist: `Iarm.h`, `devicesettings.h`
-- Verify if mocks exist: `IarmBusMock.h`, `HostMock.h`, etc.
+- Check if wrapper files exist: `Iarm.h`, `dependency wrapper`
+- Verify if mocks exist: `IarmBusMock.h`, `ManagerMock.h`, etc.
 - Even if code doesn't call library functions, the mock is still required for build stability
 
 ### Quality Assurance
@@ -275,7 +269,7 @@ target_link_libraries(${PLUGIN_IMPLEMENTATION}
 - **Verify two-level dependency coverage** (see "Execution Path Tracing" section for detailed examples):
   - For each external API call, verify the API interface mock exists
   - **For each returned object type, verify the object type mock exists**
-  - Example: If code calls `port.getDisplay().getDisplayEDID()`, verify mocks exist for BOTH: `VideoOutputPortMock` AND `DisplayMock`
+  - Example: If code calls `object.getResult()`, verify mocks exist for BOTH: `ReturnedObjectMock` AND `RelatedObjectMock`
 - **Verify grouping**: If main class has `Register()` methods for events, ensure ALL event interface mocks are in the same file
 - Verify all mock methods have correct signatures matching the original interface (return types, parameters, const qualifiers)
 - Ensure proper const-correctness and override specifications
@@ -290,7 +284,7 @@ target_link_libraries(${PLUGIN_IMPLEMENTATION}
   2. Contains `#include <gmock/gmock.h>`
   3. Contains `MOCK_METHOD(...)` declarations
 - **WRAPPER WITHOUT MOCK CHECK**: For each dependency from CMakeLists.txt, verify:
-  1. If a wrapper file exists (e.g., `Iarm.h`, `devicesettings.h`)
+  1. If a wrapper file exists (e.g., `Iarm.h`, `dependency wrapper`)
   2. AND the wrapper defines `*Impl` interfaces
   3. THEN a corresponding `*Mock.h` file with MOCK_METHOD declarations MUST exist
   4. If missing, generate the mock file
