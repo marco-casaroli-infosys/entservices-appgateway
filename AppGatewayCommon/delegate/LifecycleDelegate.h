@@ -982,9 +982,9 @@ class LifecycleDelegate : public BaseEventDelegate
         // mutex is held while SuspendTraffic or ResumeTraffic performs COM-RPC.
         const bool needsResume = ConfigUtils::useAppManagers() && !appId.empty() &&
                                  (newLifecycleState == Exchange::ILifecycleManager::INITIALIZING ||
-                                  oldLifecycleState == Exchange::ILifecycleManager::HIBERNATED);
+                                  Exchange::ILifecycleManager::HIBERNATED == oldLifecycleState);
         const bool needsSuspend = ConfigUtils::useAppManagers() && !appId.empty() &&
-                                  newLifecycleState == Exchange::ILifecycleManager::HIBERNATED;
+                                  Exchange::ILifecycleManager::HIBERNATED == newLifecycleState;
 
         Exchange::IAppGatewayAppSessionGuard* guardRef = nullptr;
         if (needsResume || needsSuspend) {
@@ -995,7 +995,7 @@ class LifecycleDelegate : public BaseEventDelegate
         // INITIALIZING clears suspension left by a crashed prior session. Leaving
         // HIBERNATED resumes first so the state-change event is not dropped.
         if (needsResume && nullptr != guardRef) {
-            if (newLifecycleState == Exchange::ILifecycleManager::INITIALIZING) {
+            if (Exchange::ILifecycleManager::INITIALIZING == newLifecycleState) {
                 LOGINFO("HandleLifecycleUpdate: clearing stale traffic suspension for new session appId=%s", appId.c_str());
             } else {
                 LOGINFO("HandleLifecycleUpdate: resuming traffic for resumed appId=%s", appId.c_str());

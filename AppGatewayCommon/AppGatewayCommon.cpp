@@ -115,7 +115,7 @@ namespace Plugin {
         // any in-flight lifecycle callbacks from using a stale guard.
         if (ConfigUtils::useAppManagers() && mDelegate) {
             auto lifecycleDelegate = mDelegate->getLifecycleDelegate();
-            if (lifecycleDelegate != nullptr) {
+            if (nullptr != lifecycleDelegate) {
                 lifecycleDelegate->SetSessionGuard(nullptr);
             }
         }

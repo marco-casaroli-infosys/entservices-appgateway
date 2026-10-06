@@ -240,20 +240,7 @@ namespace WPEFramework
 
         Core::hresult AppGatewayResponderImplementation::Emit(const Context& context /* @in */,
                 const string& method /* @in */, const string& payload /* @in @opaque */) {
-            // Bypass the paused-state check for the HIBERNATED lifecycle transition event.
-            // This ensures the app receives the state-change notification even when
-            // the event is queued after SuspendTraffic() completes.
-            bool isHibernatedTransition = false;
-            if (method == "Lifecycle2.onStateChanged") {
-                // Parse the payload to check if newState is "hibernated"
-                // Expected payload format: {"newState":"hibernated",...}
-                const std::string hibernatedState = "\"newState\":\"hibernated\"";
-                if (payload.find(hibernatedState) != std::string::npos) {
-                    isHibernatedTransition = true;
-                }
-            }
-
-            if (!isHibernatedTransition && mPausedAppsRegistry.IsPaused(context.appId)) {
+            if (mPausedAppsRegistry.IsPaused(context.appId)) {
                 LOGDBG("Emit: dropping outgoing notification for hibernated appId=%s", context.appId.c_str());
                 return Core::ERROR_NONE;
             }
@@ -429,7 +416,8 @@ namespace WPEFramework
                 LOGDBG("DispatchResponseToConnectionIfNotPaused: dropping response for hibernated appId=%s", appId.c_str());
                 return false;
             }
-            return mWsManager.SendMessageToConnection(connectionId, result, requestId);
+            ReturnMessageInSocket(connectionId, requestId, result);
+            return true;
         }
 
         bool AppGatewayResponderImplementation::DispatchNotificationToConnectionIfNotPaused(
@@ -438,8 +426,22 @@ namespace WPEFramework
             const string& payload)
         {
             string appId;
-            if (mAppIdRegistry.Get(connectionId, appId) &&
-                mPausedAppsRegistry.IsPaused(appId)) {
+            bool isPaused = false;
+            if (mAppIdRegistry.Get(connectionId, appId)) {
+                isPaused = mPausedAppsRegistry.IsPaused(appId);
+            }
+
+            // Bypass the paused-state check for the HIBERNATED lifecycle transition event.
+            // This ensures the event reaches the WebSocket even if queued after SuspendTraffic().
+            bool isHibernatedTransition = false;
+            if ("Lifecycle2.onStateChanged" == designator) {
+                const std::string hibernatedState = "\"newState\":\"hibernated\"";
+                if (std::string::npos != payload.find(hibernatedState)) {
+                    isHibernatedTransition = true;
+                }
+            }
+
+            if (!isHibernatedTransition && isPaused) {
                 LOGDBG("DispatchNotificationToConnectionIfNotPaused: dropping notification for hibernated appId=%s", appId.c_str());
                 return false;
             }
