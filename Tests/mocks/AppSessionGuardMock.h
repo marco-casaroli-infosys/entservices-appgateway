@@ -58,7 +58,7 @@ public:
     uint32_t Release() const override
     {
         const uint32_t prev = _refCount.fetch_sub(1, std::memory_order_acq_rel);
-        if (prev == 1) {
+        if (1 == prev) {
             delete this;
             return WPEFramework::Core::ERROR_DESTRUCTION_SUCCEEDED;
         }
@@ -67,7 +67,7 @@ public:
 
     void* QueryInterface(const uint32_t id) override
     {
-        if (id == IAppGatewayAppSessionGuard::ID) {
+        if (IAppGatewayAppSessionGuard::ID == id) {
             AddRef();
             return static_cast<IAppGatewayAppSessionGuard*>(this);
         }

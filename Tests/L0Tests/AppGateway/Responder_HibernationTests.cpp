@@ -108,7 +108,7 @@ uint32_t Test_Responder_QueryInterface_SessionGuard()
     ExpectTrue(tr, guard != nullptr,
                "QueryInterface(IAppGatewayAppSessionGuard::ID) returns non-null");
 
-    if (guard != nullptr) {
+    if (nullptr != guard) {
         guard->Release();
     }
 
@@ -359,7 +359,7 @@ uint32_t Test_Responder_SessionGuard_Via_Interface_Pointer()
     ExpectTrue(tr, guard != nullptr,
                "IAppGatewayAppSessionGuard available via QueryInterface");
 
-    if (guard != nullptr) {
+    if (nullptr != guard) {
         const std::string appId = "com.example.via.interface";
 
         // SuspendTraffic via interface pointer

@@ -924,19 +924,19 @@ class LifecycleDelegate : public BaseEventDelegate
     {
         {
             std::lock_guard<std::mutex> lock(mSessionGuardMutex);
-            if (mSessionGuard != nullptr) {
+            if (nullptr != mSessionGuard) {
                 mSessionGuard->AddRef();
                 return mSessionGuard;
             }
         }
 
-        if (!ConfigUtils::useAppManagers() || mShell == nullptr) {
+        if (!ConfigUtils::useAppManagers() || nullptr == mShell) {
             return nullptr;
         }
 
         Exchange::IAppGatewayAppSessionGuard* sessionGuard =
             mShell->QueryInterfaceByCallsign<Exchange::IAppGatewayAppSessionGuard>(APP_GATEWAY_CALLSIGN);
-        if (sessionGuard == nullptr) {
+        if (nullptr == sessionGuard) {
             LOGWARN("AcquireSessionGuardRef: IAppGatewayAppSessionGuard still not available");
             return nullptr;
         }
@@ -946,7 +946,7 @@ class LifecycleDelegate : public BaseEventDelegate
         sessionGuard->Release();
 
         std::lock_guard<std::mutex> lock(mSessionGuardMutex);
-        if (mSessionGuard != nullptr) {
+        if (nullptr != mSessionGuard) {
             mSessionGuard->AddRef();
             return mSessionGuard;
         }
@@ -994,20 +994,22 @@ class LifecycleDelegate : public BaseEventDelegate
         LOGINFO("HandleLifecycleUpdate: appId=%s, needsResume=%d, needsSuspend=%d, guardRef=%p", appId.c_str(), needsResume, needsSuspend, guardRef);
         // INITIALIZING clears suspension left by a crashed prior session. Leaving
         // HIBERNATED resumes first so the state-change event is not dropped.
-        if (needsResume && guardRef != nullptr) {
+        if (needsResume && nullptr != guardRef) {
             if (newLifecycleState == Exchange::ILifecycleManager::INITIALIZING) {
                 LOGINFO("HandleLifecycleUpdate: clearing stale traffic suspension for new session appId=%s", appId.c_str());
             } else {
                 LOGINFO("HandleLifecycleUpdate: resuming traffic for resumed appId=%s", appId.c_str());
             }
-            guardRef->ResumeTraffic(appId);
+            if (Core::ERROR_NONE != guardRef->ResumeTraffic(appId)) {
+                LOGERR("HandleLifecycleUpdate: failed to resume traffic for appId=%s", appId.c_str());
+            }
         }
 
         const string lifecyclePayload = mLifecycleStateRegistry.GetLifecycle2StateJson(appInstanceId);
         // Normal lifecycle delivery remains asynchronous. When a guard will close
         // the channel, deliver HIBERNATED synchronously to guarantee Emit completes
         // before SuspendTraffic starts dropping outbound jobs.
-        if (needsSuspend && guardRef != nullptr && IsNotificationRegistered("Lifecycle2.onStateChanged")) {
+        if (needsSuspend && nullptr != guardRef && IsNotificationRegistered("Lifecycle2.onStateChanged")) {
             DispatchToAppNotifications("Lifecycle2.onStateChanged", lifecyclePayload, appId);
         } else {
             Dispatch("Lifecycle2.onStateChanged", lifecyclePayload, appId);
@@ -1015,12 +1017,14 @@ class LifecycleDelegate : public BaseEventDelegate
 
         // Suspension is best-effort: lifecycle processing continues if the guard
         // was unavailable during plugin startup or lazy acquisition.
-        if (needsSuspend && guardRef != nullptr) {
+        if (needsSuspend && nullptr != guardRef) {
             LOGINFO("HandleLifecycleUpdate: suspending traffic for hibernating appId=%s", appId.c_str());
-            guardRef->SuspendTraffic(appId);
+            if (Core::ERROR_NONE != guardRef->SuspendTraffic(appId)) {
+                LOGERR("HandleLifecycleUpdate: failed to suspend traffic for appId=%s", appId.c_str());
+            }
         }
 
-        if (guardRef != nullptr) {
+        if (nullptr != guardRef) {
             guardRef->Release();
             guardRef = nullptr;
         }
