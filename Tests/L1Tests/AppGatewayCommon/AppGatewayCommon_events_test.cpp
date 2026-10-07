@@ -710,7 +710,7 @@ TEST_F(UserSettingsNotificationTest, AGC_L1_223_UserSettings_OnPresentationLangu
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     ASSERT_NE(capturedUSNotification, nullptr);
 
-    EXPECT_CALL(*localeEmitter, Emit(::testing::HasSubstr("Localization.onLocaleChanged"), ::testing::StrEq("en-US"), _))
+    EXPECT_CALL(*localeEmitter, Emit(::testing::HasSubstr("Localization.onLocaleChanged"), ::testing::StrEq("\"en-US\""), _))
         .Times(::testing::AtLeast(1));
     EXPECT_CALL(*languageEmitter, Emit(::testing::HasSubstr("Localization.onLanguageChanged"), ::testing::StrEq("\"en\""), _))
         .Times(::testing::AtLeast(1));
@@ -858,7 +858,7 @@ TEST_F(UserSettingsNotificationTest, AGC_L1_229_UserSettings_OnPresentationLangu
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
 
     // onLocaleChanged and onPresentationLanguageChanged must fire
-    EXPECT_CALL(*localeEmitter, Emit(::testing::HasSubstr("Localization.onLocaleChanged"), ::testing::StrEq("eng"), _))
+    EXPECT_CALL(*localeEmitter, Emit(::testing::HasSubstr("Localization.onLocaleChanged"), ::testing::StrEq("\"eng\""), _))
         .Times(::testing::AtLeast(1));
     EXPECT_CALL(*presEmitter, Emit(::testing::HasSubstr("Localization.onPresentationLanguageChanged"), ::testing::StrEq("{\"value\":\"eng\"}"), _))
         .Times(::testing::AtLeast(1));
@@ -883,7 +883,8 @@ TEST_F(UserSettingsNotificationTest, AGC_L1_230_UserSettings_OnPreferredCaptions
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     ASSERT_NE(capturedUSNotification, nullptr);
 
-    EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("ClosedCaptions.onPreferredLanguagesChanged"), _, _)).Times(::testing::AtLeast(1));
+    // Firebolt payload is a JSON array, not the raw comma separated UserSettings value
+    EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("ClosedCaptions.onPreferredLanguagesChanged"), ::testing::StrEq("[\"eng\",\"spa\"]"), _)).Times(::testing::AtLeast(1));
     capturedUSNotification->OnPreferredCaptionsLanguagesChanged("eng,spa");
 
     std::this_thread::sleep_for(std::chrono::milliseconds(25));
@@ -923,6 +924,42 @@ TEST_F(UserSettingsNotificationTest, AGC_L1_232_UserSettings_OnVoiceGuidanceHint
     // which re-queries voice guidance state and dispatches the composite settings
     EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("Accessibility.onVoiceGuidanceSettingsChanged"), _, _)).Times(::testing::AtLeast(1));
     capturedUSNotification->OnVoiceGuidanceHintsChanged(true);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+}
+
+TEST_F(UserSettingsNotificationTest, AGC_L1_257_UserSettings_OnVoiceGuidanceChanged_DispatchesVoiceGuidanceOnEnabledChanged)
+{
+    MockEmitter* emitter = new MockEmitter();
+    heapEmitters.push_back(emitter);
+    emitter->AddRef();
+
+    // VoiceGuidance.onEnabledChanged must be accepted at subscription and dispatched as a boolean
+    bool status = false;
+    plugin.HandleAppEventNotifier(emitter, "VoiceGuidance.onEnabledChanged", true, status);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    ASSERT_NE(capturedUSNotification, nullptr);
+
+    EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("VoiceGuidance.onEnabledChanged"), ::testing::StrEq("true"), _)).Times(::testing::AtLeast(1));
+    capturedUSNotification->OnVoiceGuidanceChanged(true);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+}
+
+TEST_F(UserSettingsNotificationTest, AGC_L1_258_UserSettings_OnAudioDescriptionChanged_DispatchesAudioDescriptionsOnEnabledChanged)
+{
+    MockEmitter* emitter = new MockEmitter();
+    heapEmitters.push_back(emitter);
+    emitter->AddRef();
+
+    // AudioDescriptions.onEnabledChanged must be accepted at subscription and dispatched as a boolean
+    bool status = false;
+    plugin.HandleAppEventNotifier(emitter, "AudioDescriptions.onEnabledChanged", true, status);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    ASSERT_NE(capturedUSNotification, nullptr);
+
+    EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("AudioDescriptions.onEnabledChanged"), ::testing::StrEq("true"), _)).Times(::testing::AtLeast(1));
+    capturedUSNotification->OnAudioDescriptionChanged(true);
 
     std::this_thread::sleep_for(std::chrono::milliseconds(25));
 }

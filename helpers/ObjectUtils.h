@@ -102,6 +102,16 @@ class ObjectUtils {
         static string BoolToJsonString(const bool value) {  
             return value ? "true" : "false";
         }
+
+        // Serializes a string as a JSON string value (quoted and escaped by
+        // Thunder's JSON serializer). Use it instead of "\"" + value + "\"".
+        static string StringToJsonString(const string& value) {
+            Core::JSON::String json;
+            json = value;
+            string result;
+            json.ToString(result);
+            return result;
+        }
 };
 #endif
 

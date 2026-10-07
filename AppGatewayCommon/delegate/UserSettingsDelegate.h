@@ -44,7 +44,9 @@ static const std::set<string> VALID_USER_SETTINGS_EVENT = {
     "accessibility.onclosedcaptionssettingschanged",
     "accessibility.onvoiceguidancesettingschanged",
     "accessibility.onaudiodescriptionchanged",
-    "localization.onpresentationlanguagechanged"
+    "localization.onpresentationlanguagechanged",
+    "audiodescriptions.onenabledchanged",
+    "voiceguidance.onenabledchanged"
 };
 
 // Events that require TextTrack interface registration
@@ -784,7 +786,7 @@ class UserSettingsDelegate : public BaseEventDelegate{
                         language = std::move(presentationLanguage);
                     }
                     // Wrap in quotes to make it a valid JSON string
-                    result = "\"" + language + "\"";
+                    result = ObjectUtils::StringToJsonString(language);
                     return Core::ERROR_NONE;
                 } else {
                     result = "{\"error\":\"couldn't get language\"}";
@@ -816,7 +818,7 @@ class UserSettingsDelegate : public BaseEventDelegate{
                 // Return the full locale without any transformation.
                 // Firebolt spec: presentationLanguage may legitimately be "" when
                 // uninitialized — that is a valid value, not an error.
-                result = "\"" + presentationLanguage + "\"";
+                result = ObjectUtils::StringToJsonString(presentationLanguage);
                 return Core::ERROR_NONE;
             } else {
                 LOGERR("Failed to call GetPresentationLanguage on UserSettings COM interface, error: %u", rc);
@@ -1041,6 +1043,7 @@ class UserSettingsDelegate : public BaseEventDelegate{
         void OnAudioDescriptionChanged(const bool enabled) {
             mParent.Dispatch( "Accessibility.onAudioDescriptionSettingsChanged", ObjectUtils::CreateBooleanJsonString("enabled", enabled));
             mParent.Dispatch( "Accessibility.onAudioDescriptionChanged", ObjectUtils::CreateBooleanJsonString("value", enabled));
+            mParent.Dispatch( "AudioDescriptions.onEnabledChanged", ObjectUtils::BoolToJsonString(enabled));
         }
 
         void OnPreferredAudioLanguagesChanged(const string& preferredLanguages) {
@@ -1053,14 +1056,13 @@ class UserSettingsDelegate : public BaseEventDelegate{
 
         void OnPresentationLanguageChanged(const string& presentationLanguage) {
             
-            mParent.Dispatch( "Localization.onLocaleChanged", presentationLanguage);
+            mParent.Dispatch( "Localization.onLocaleChanged", ObjectUtils::StringToJsonString(presentationLanguage));
 
             // check presentationLanguage is a delimitted string like "en-US"
             // add logic to get the "en" if the value is "en-US"
             if (presentationLanguage.find('-') != string::npos) {
                 string language = presentationLanguage.substr(0, presentationLanguage.find('-'));
-                // Wrap in quotes to make it a valid JSON string
-                string languageJson = "\"" + language + "\"";
+                string languageJson = ObjectUtils::StringToJsonString(language);
                 mParent.Dispatch( "Localization.onLanguageChanged", languageJson);
             } else {
                 LOGWARN("invalid value=%s set it must be a delimited string like en-US", presentationLanguage.c_str());
@@ -1089,7 +1091,12 @@ class UserSettingsDelegate : public BaseEventDelegate{
         }
 
         void OnPreferredCaptionsLanguagesChanged(const string& preferredLanguages) {
-            mParent.Dispatch( "ClosedCaptions.onPreferredLanguagesChanged", preferredLanguages);
+            // Firebolt: an array of ISO 639-2 codes; UserSettings has a comma separated list
+            string languagesJson;
+            JsonArray languagesArray;
+            ParseCommaSeparatedLanguages(preferredLanguages, languagesArray);
+            languagesArray.ToString(languagesJson);
+            mParent.Dispatch( "ClosedCaptions.onPreferredLanguagesChanged", languagesJson);
             string enabled = "false";
             mParent.GetCaptions(enabled);
             // Add styles - get from TextTrack if available, otherwise use empty
@@ -1109,6 +1116,7 @@ class UserSettingsDelegate : public BaseEventDelegate{
         }
 
         void OnVoiceGuidanceChanged(const bool enabled) {
+            mParent.Dispatch( "VoiceGuidance.onEnabledChanged", ObjectUtils::BoolToJsonString(enabled));
             mParent.DispatchVoiceGuidanceSettingsChanged();
         }
 

@@ -41,6 +41,7 @@
 #include "BaseEventDelegate.h"
 #include <algorithm>
 #include "ContextUtils.h"
+#include "ObjectUtils.h"
 #include <mutex>
 #include <interfaces/ISystemServices.h>
 
@@ -96,6 +97,7 @@ public:
     static constexpr const char* EVENT_ON_DEVICE_NAME_CHANGED = "Device.onDeviceNameChanged";
     static constexpr const char* EVENT_ON_TIMEZONE_CHANGED    = "Localization.onTimeZoneChanged";
     static constexpr const char* EVENT_ON_COUNTRY_CHANGED     = "Localization.onCountryChanged";
+    static constexpr const char* EVENT_ON_COUNTRY_CODE_CHANGED = "Localization.onCountryCodeChanged";
 
 private:
     // Small helper job that runs an arbitrary std::function on a worker-pool thread.
@@ -303,8 +305,7 @@ public:
         {
             name = "Living Room";
         }
-        // Wrap in quotes to make it a valid JSON string
-        name = "\"" + name + "\"";
+        name = ObjectUtils::StringToJsonString(name);
         return Core::ERROR_NONE;
     }
 
@@ -503,8 +504,7 @@ public:
         if (rc == Core::ERROR_NONE && success)
         {
             tz = std::move(timeZone);
-            // Wrap in quotes to make it a valid JSON string
-            tz = "\"" + tz + "\"";
+            tz = ObjectUtils::StringToJsonString(tz);
             return Core::ERROR_NONE;
         }
         LOGERR("SystemDelegate: couldn't get timezone");
@@ -1257,7 +1257,7 @@ public:
             LOGERR("[AppGatewayCommon|TimezoneChanged] newTimeZone parameter is empty");
             return false;
         }
-        Dispatch(EVENT_ON_TIMEZONE_CHANGED, "\"" + newTz + "\"");
+        Dispatch(EVENT_ON_TIMEZONE_CHANGED, ObjectUtils::StringToJsonString(newTz));
         return true;
     }
 
@@ -1286,6 +1286,8 @@ public:
         object.ToString(result);
 
         Dispatch(EVENT_ON_COUNTRY_CHANGED, result);
+        // Firebolt Localization.onCountryCodeChanged: the code as a string, like Localization.countryCode
+        Dispatch(EVENT_ON_COUNTRY_CODE_CHANGED, ObjectUtils::StringToJsonString(code));
         return true;
     }
 
@@ -1307,7 +1309,7 @@ public:
             SetupSystemSub();
         } else if (evLower == "localization.ontimezonechanged") {
             SetupSystemSub();
-        } else if (evLower == "localization.oncountrychanged") {
+        } else if (evLower == "localization.oncountrychanged" || evLower == "localization.oncountrycodechanged") {
             SetupSystemSub();
         } else {
             registrationError = true; // event not recognized - signal error to caller
@@ -2228,11 +2230,21 @@ private:
 
     void OnSystemFriendlyNameChanged(const WPEFramework::Core::JSON::VariantContainer& params)
     {
-        (void)params;
         LOGINFO("[AppGatewayCommon|System.onFriendlyNameChanged] Incoming alias=%s.%s, invoking handlers...",
                 SYSTEM_CALLSIGN, "onFriendlyNameChanged");
-        // Re-query state and dispatch event
-        const bool nameEmitted = EmitOnNameChanged();
+        // Use the name the event carries, as the time zone and territory handlers do: querying
+        // org.rdk.System again from inside its own notification can block. Re-query only if the
+        // event has no name.
+        bool nameEmitted = false;
+        const std::string friendlyName = params.HasLabel(_T("friendlyName")) ? params[_T("friendlyName")].String() : std::string();
+        if (!friendlyName.empty()) {
+            const std::string payload = ObjectUtils::StringToJsonString(friendlyName);
+            Dispatch(EVENT_ON_NAME_CHANGED, payload);
+            Dispatch(EVENT_ON_DEVICE_NAME_CHANGED, payload);
+            nameEmitted = true;
+        } else {
+            nameEmitted = EmitOnNameChanged();
+        }
         LOGINFO("[AppGatewayCommon|System.onFriendlyNameChanged] Handler responses: onNameChanged=%s",
                 nameEmitted ? "emitted" : "skipped");
     }
