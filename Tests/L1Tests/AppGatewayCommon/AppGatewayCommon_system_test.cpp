@@ -593,7 +593,10 @@ TEST_F(SystemDelegateTest, AGC_L1_098_GetTimeZone_Success)
     const auto rc = plugin.HandleAppGatewayRequest(ctx, "localization.timezone", "{}", result);
 
     EXPECT_EQ(Core::ERROR_NONE, rc);
-    EXPECT_NE(result.find("America/New_York"), std::string::npos);
+    // The result is a JSON string; '/' may be escaped as "\/" depending on the Thunder build
+    Core::JSON::String timeZone;
+    EXPECT_TRUE(timeZone.FromString(result));
+    EXPECT_EQ("America/New_York", timeZone.Value());
 }
 
 TEST_F(SystemDelegateTest, AGC_L1_099_SetTimeZone_Success)
@@ -1506,6 +1509,102 @@ TEST_F(SystemDelegateEmitTest, AGC_L1_146_HandleEvent_Unsubscribe_RemovesEmitter
     EXPECT_FALSE(registrationError);
     // After removal the notification should no longer be registered
     EXPECT_FALSE(systemDelegate->IsNotificationRegistered("Device.onHdrChanged"));
+}
+
+/* ================================================================
+ * Firebolt payloads must be valid JSON
+ *
+ * String values are escaped, Localization.onCountryCodeChanged is
+ * accepted and dispatched, and Device.onNameChanged uses the name
+ * carried by the org.rdk.System event.
+ * ================================================================ */
+
+TEST_F(SystemDelegateTest, AGC_L1_259_GetDeviceName_EscapesQuotesAndBackslashes)
+{
+    systemDispatcher.SetHandler("getFriendlyName", [](const std::string&, const std::string&, std::string& resp) {
+        resp = R"({"friendlyName":"Say \"hi\" \\o"})";
+        return Core::ERROR_NONE;
+    });
+
+    const auto ctx = MakeContext();
+    string result;
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "device.name", "{}", result);
+
+    EXPECT_EQ(Core::ERROR_NONE, rc);
+    EXPECT_EQ(R"("Say \"hi\" \\o")", result);
+}
+
+TEST(ObjectUtilsTest, AGC_L1_260_StringToJsonString_EscapesSpecialCharacters)
+{
+    EXPECT_EQ(R"("Living Room")", ObjectUtils::StringToJsonString("Living Room"));
+    EXPECT_EQ(R"("Say \"hi\"")", ObjectUtils::StringToJsonString("Say \"hi\""));
+    EXPECT_EQ(R"("C:\\TV")", ObjectUtils::StringToJsonString("C:\\TV"));
+    EXPECT_EQ(R"("a\nb\tc")", ObjectUtils::StringToJsonString("a\nb\tc"));
+    EXPECT_EQ(R"("\u0001\u001F")", ObjectUtils::StringToJsonString("\x01\x1f"));
+    EXPECT_EQ(R"("")", ObjectUtils::StringToJsonString(""));
+}
+
+TEST_F(SystemDelegateEmitTest, AGC_L1_261_EmitOnTerritoryChanged_DispatchesCountryCode)
+{
+    MockEmitter* countryEmitter = SubscribeEmitter("Localization.onCountryChanged");
+    MockEmitter* countryCodeEmitter = SubscribeEmitter("Localization.onCountryCodeChanged");
+
+    EXPECT_CALL(*countryEmitter, Emit(::testing::HasSubstr("Localization.onCountryChanged"), ::testing::StrEq(R"({"value":"GB"})"), _))
+        .Times(::testing::AtLeast(1));
+    EXPECT_CALL(*countryCodeEmitter, Emit(::testing::HasSubstr("Localization.onCountryCodeChanged"), ::testing::StrEq(R"("GB")"), _))
+        .Times(::testing::AtLeast(1));
+
+    auto systemDelegate = plugin.mDelegate->getSystemDelegate();
+    ASSERT_NE(systemDelegate, nullptr);
+    Core::JSON::VariantContainer params;
+    params[_T("newTerritory")] = "GBR";
+    EXPECT_TRUE(systemDelegate->EmitOnTerritoryChanged(params));
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+}
+
+TEST_F(SystemDelegateEmitTest, AGC_L1_262_HandleEvent_AcceptsOnCountryCodeChanged)
+{
+    auto systemDelegate = plugin.mDelegate->getSystemDelegate();
+    ASSERT_NE(systemDelegate, nullptr);
+
+    MockEmitter* emitter = new MockEmitter();
+    heapEmitters.push_back(emitter);
+    emitter->AddRef();
+
+    bool registrationError = true;
+    const bool handled = systemDelegate->HandleEvent(emitter, "Localization.onCountryCodeChanged", true, registrationError);
+
+    EXPECT_TRUE(handled);
+    EXPECT_FALSE(registrationError);
+    EXPECT_TRUE(systemDelegate->IsNotificationRegistered("Localization.onCountryCodeChanged"));
+
+    systemDelegate->HandleEvent(emitter, "Localization.onCountryCodeChanged", false, registrationError);
+}
+
+TEST_F(SystemDelegateEmitTest, AGC_L1_263_OnSystemFriendlyNameChanged_UsesEventName)
+{
+    // The handler must not query org.rdk.System again from inside its notification
+    int queries = 0;
+    systemDispatcher.SetHandler("getFriendlyName", [&queries](const std::string&, const std::string&, std::string& resp) {
+        ++queries;
+        resp = R"({"friendlyName":"Stale Name"})";
+        return Core::ERROR_NONE;
+    });
+
+    MockEmitter* emitter = SubscribeEmitter("Device.onNameChanged");
+
+    EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("Device.onNameChanged"), ::testing::StrEq(R"("Say \"hi\"")"), _))
+        .Times(::testing::AtLeast(1));
+
+    auto systemDelegate = plugin.mDelegate->getSystemDelegate();
+    ASSERT_NE(systemDelegate, nullptr);
+    Core::JSON::VariantContainer params;
+    params[_T("friendlyName")] = "Say \"hi\"";
+    systemDelegate->OnSystemFriendlyNameChanged(params);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    EXPECT_EQ(0, queries);
 }
 
 } // namespace

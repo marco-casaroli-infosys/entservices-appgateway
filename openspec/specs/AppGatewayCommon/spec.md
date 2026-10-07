@@ -90,12 +90,17 @@ System and VideoOutput callbacks that need current state SHALL first submit comp
 
 ### Requirement: Catalog and runtime event differences
 
-The specification SHALL preserve actual runtime behavior when catalog names and delegate handlers differ. Current code recognizes/emits `Localization.onCountryChanged`, not catalogued `Localization.onCountryCodeChanged`; catalogued legacy VoiceGuidance event labels are not accepted by `UserSettingsDelegate::HandleEvent`.
+The specification SHALL preserve actual runtime behavior when catalog names and delegate handlers differ. Current code recognizes and emits both `Localization.onCountryChanged` (`{"value":<code>}`) and the catalogued `Localization.onCountryCodeChanged` (the code as a JSON string). `UserSettingsDelegate::HandleEvent` accepts `VoiceGuidance.onEnabledChanged` and `AudioDescriptions.onEnabledChanged`; the other catalogued VoiceGuidance labels (`onNavigationHintsChanged`, `onRateChanged`/`onSpeedChanged`, `onVoiceGuidanceRateChanged`) are not accepted.
 
 #### Scenario: Catalogued event has no delegate handler
 
 - **WHEN** event registration reaches SettingsDelegate with an unsupported label
 - **THEN** no matching delegate registration SHALL occur even though scheduling previously reported success
+
+#### Scenario: Country code and enabled-state events are registered
+
+- **WHEN** an app listens to `Localization.onCountryCodeChanged`, `VoiceGuidance.onEnabledChanged` or `AudioDescriptions.onEnabledChanged`
+- **THEN** the matching delegate SHALL register the event and dispatch it when the setting changes
 
 ## High-Level Design
 
