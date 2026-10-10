@@ -76,6 +76,22 @@ namespace Plugin {
         mDelegate = std::make_shared<SettingsDelegate>();
         mDelegate->setShell(mShell);
 
+        // Lifecycle 2 only: wire up the WebSocket session guard so the
+        // LifecycleDelegate can pause/resume traffic when an app hibernates.
+        if (ConfigUtils::useAppManagers()) {
+            Exchange::IAppGatewayAppSessionGuard* sessionGuard =
+                mShell->QueryInterfaceByCallsign<Exchange::IAppGatewayAppSessionGuard>(APP_GATEWAY_CALLSIGN);
+            if (sessionGuard != nullptr) {
+                auto lifecycleDelegate = mDelegate->getLifecycleDelegate();
+                if (lifecycleDelegate != nullptr) {
+                    lifecycleDelegate->SetSessionGuard(sessionGuard);
+                }
+                sessionGuard->Release();
+            } else {
+                LOGWARN("AppGatewayCommon::Initialize: IAppGatewayAppSessionGuard not available; hibernation WebSocket guard disabled");
+            }
+        }
+
         return EMPTY_STRING;
     }
 
@@ -93,6 +109,15 @@ namespace Plugin {
         {
             std::unique_lock<std::mutex> lk(mJobDrainMutex);
             mJobDrainCv.wait(lk, [this] { return mActiveJobs.load(std::memory_order_acquire) == 0; });
+        }
+
+        // Clear session guard reference before delegate cleanup to prevent
+        // any in-flight lifecycle callbacks from using a stale guard.
+        if (ConfigUtils::useAppManagers() && mDelegate) {
+            auto lifecycleDelegate = mDelegate->getLifecycleDelegate();
+            if (nullptr != lifecycleDelegate) {
+                lifecycleDelegate->SetSessionGuard(nullptr);
+            }
         }
 
         mDelegate->Cleanup();

@@ -51,7 +51,7 @@ jobs:
             install/usr/tools/cmake
             !install/usr/etc/WPEFramework/plugins
             !install/usr/lib/wpeframework/plugins
-          key: ${{ runner.os }}-${{ env.THUNDER_REF }}-${{ env.INTERFACES_REF }}-l0-4
+          key: ${{ runner.os }}-${{ env.THUNDER_REF }}-${{ env.INTERFACES_REF }}-l0-5
 
       - name: Validate cached toolchain artifacts
         id: toolchain

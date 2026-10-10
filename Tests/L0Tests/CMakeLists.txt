@@ -42,6 +42,7 @@ set(APPGW_APPGATEWAY_L0_SOURCES
     AppGateway/Resolver_Configure_And_ResolveTests.cpp
     AppGateway/Responder_BehaviorTests.cpp
     AppGateway/AppGatewayResponderImplementation_Tests.cpp
+    AppGateway/Responder_HibernationTests.cpp
     AppGateway/ContextUtils_ConversionTests.cpp
     AppGateway/AppGatewayImplementation_BranchTests.cpp
     AppGateway/AppGatewayTelemetry_Tests.cpp

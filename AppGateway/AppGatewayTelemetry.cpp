@@ -1171,7 +1171,7 @@ namespace Plugin {
             SendT2Event(metricName.c_str(), metricPayload, sysContext);
         }
 
-        LOGTRACE("External service error stats sent as metrics: %zu services with errors", 
+        LOGTRACE("External service error stats sent as metrics: %zu services with errors",
             externalServiceErrorCounts.size());
     }
 
@@ -1623,7 +1623,7 @@ namespace Plugin {
 #if 0 // Not sending the message to server for now
         Utils::Telemetry::sendMessage(const_cast<char*>(AGW_MARKER_JOB_TIMING),
                                         const_cast<char*>(formattedPayload.c_str()));
-#endif                                        
+#endif
     }
 
     void AppGatewayTelemetry::ResetHealthStats()
@@ -2068,7 +2068,7 @@ namespace Plugin {
             parent->SendT2Event(metricName.c_str(), metricPayload, sysContext);
         }
 
-        LOGTRACE("TelemetrySnapshot: External service error stats sent: %zu services with errors", 
+        LOGTRACE("TelemetrySnapshot: External service error stats sent: %zu services with errors",
                 externalServiceErrorCounts.size());
     }
 
@@ -2402,7 +2402,7 @@ namespace Plugin {
             mSnapshot->parent->SendT2Event(metricName.c_str(), metricPayload, sysContext);
         }
         
-        LOGTRACE("FlushJob: External service error stats sent: %zu services with errors", 
+        LOGTRACE("FlushJob: External service error stats sent: %zu services with errors",
                 mSnapshot->externalServiceErrorCounts.size());
     }
 
