@@ -97,7 +97,6 @@ public:
     static constexpr const char* EVENT_ON_DEVICE_NAME_CHANGED = "Device.onDeviceNameChanged";
     static constexpr const char* EVENT_ON_TIMEZONE_CHANGED    = "Localization.onTimeZoneChanged";
     static constexpr const char* EVENT_ON_COUNTRY_CHANGED     = "Localization.onCountryChanged";
-    static constexpr const char* EVENT_ON_COUNTRY_CODE_CHANGED = "Localization.onCountryCodeChanged";
 
 private:
     // Small helper job that runs an arbitrary std::function on a worker-pool thread.
@@ -1286,8 +1285,6 @@ public:
         object.ToString(result);
 
         Dispatch(EVENT_ON_COUNTRY_CHANGED, result);
-        // Firebolt Localization.onCountryCodeChanged: the code as a string, like Localization.countryCode
-        Dispatch(EVENT_ON_COUNTRY_CODE_CHANGED, ObjectUtils::StringToJsonString(code));
         return true;
     }
 
@@ -1309,7 +1306,7 @@ public:
             SetupSystemSub();
         } else if (evLower == "localization.ontimezonechanged") {
             SetupSystemSub();
-        } else if (evLower == "localization.oncountrychanged" || evLower == "localization.oncountrycodechanged") {
+        } else if (evLower == "localization.oncountrychanged") {
             SetupSystemSub();
         } else {
             registrationError = true; // event not recognized - signal error to caller

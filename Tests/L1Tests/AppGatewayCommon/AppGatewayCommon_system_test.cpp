@@ -1532,8 +1532,7 @@ TEST_F(SystemDelegateEmitTest, AGC_L1_146_HandleEvent_Unsubscribe_RemovesEmitter
 /* ================================================================
  * Firebolt payloads must be valid JSON
  *
- * String values are escaped, Localization.onCountryCodeChanged is
- * accepted and dispatched, and Device.onNameChanged uses the name
+ * String values are escaped, and Device.onNameChanged uses the name
  * carried by the org.rdk.System event.
  * ================================================================ */
 
@@ -1562,45 +1561,7 @@ TEST(ObjectUtilsTest, AGC_L1_260_StringToJsonString_EscapesSpecialCharacters)
     EXPECT_EQ(R"("")", ObjectUtils::StringToJsonString(""));
 }
 
-TEST_F(SystemDelegateEmitTest, AGC_L1_261_EmitOnTerritoryChanged_DispatchesCountryCode)
-{
-    MockEmitter* countryEmitter = SubscribeEmitter("Localization.onCountryChanged");
-    MockEmitter* countryCodeEmitter = SubscribeEmitter("Localization.onCountryCodeChanged");
-
-    EXPECT_CALL(*countryEmitter, Emit(::testing::HasSubstr("Localization.onCountryChanged"), ::testing::StrEq(R"({"value":"GB"})"), _))
-        .Times(::testing::AtLeast(1));
-    EXPECT_CALL(*countryCodeEmitter, Emit(::testing::HasSubstr("Localization.onCountryCodeChanged"), ::testing::StrEq(R"("GB")"), _))
-        .Times(::testing::AtLeast(1));
-
-    auto systemDelegate = plugin.mDelegate->getSystemDelegate();
-    ASSERT_NE(systemDelegate, nullptr);
-    Core::JSON::VariantContainer params;
-    params[_T("newTerritory")] = "GBR";
-    EXPECT_TRUE(systemDelegate->EmitOnTerritoryChanged(params));
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-}
-
-TEST_F(SystemDelegateEmitTest, AGC_L1_262_HandleEvent_AcceptsOnCountryCodeChanged)
-{
-    auto systemDelegate = plugin.mDelegate->getSystemDelegate();
-    ASSERT_NE(systemDelegate, nullptr);
-
-    MockEmitter* emitter = new MockEmitter();
-    heapEmitters.push_back(emitter);
-    emitter->AddRef();
-
-    bool registrationError = true;
-    const bool handled = systemDelegate->HandleEvent(emitter, "Localization.onCountryCodeChanged", true, registrationError);
-
-    EXPECT_TRUE(handled);
-    EXPECT_FALSE(registrationError);
-    EXPECT_TRUE(systemDelegate->IsNotificationRegistered("Localization.onCountryCodeChanged"));
-
-    systemDelegate->HandleEvent(emitter, "Localization.onCountryCodeChanged", false, registrationError);
-}
-
-TEST_F(SystemDelegateEmitTest, AGC_L1_263_OnSystemFriendlyNameChanged_UsesEventName)
+TEST_F(SystemDelegateEmitTest, AGC_L1_261_OnSystemFriendlyNameChanged_UsesEventName)
 {
     // The handler must not query org.rdk.System again from inside its notification
     int queries = 0;
