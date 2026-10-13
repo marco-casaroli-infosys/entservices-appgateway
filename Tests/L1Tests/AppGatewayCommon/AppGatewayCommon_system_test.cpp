@@ -1634,3 +1634,13 @@ TEST_F(SystemNoInterfaceTest, AGC_L1_262_GetDeviceName_NoSystemServices_LeavesRe
     EXPECT_EQ(Core::ERROR_UNAVAILABLE, rc);
     EXPECT_TRUE(result.empty()) << result;
 }
+
+TEST_F(SystemNoInterfaceTest, AGC_L1_263_GetDeviceMake_NoSystemServices_LeavesResultEmpty)
+{
+    const auto ctx = MakeContext();
+    string result;
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "device.make", "{}", result);
+
+    EXPECT_EQ(Core::ERROR_UNAVAILABLE, rc);
+    EXPECT_TRUE(result.empty()) << result;
+}

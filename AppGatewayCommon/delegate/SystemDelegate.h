@@ -248,7 +248,7 @@ public:
         auto sysServices = AcquireSystemServices();
         if (!sysServices)
         {
-            make = "unknown";
+            // Leave the result empty: on failure the gateway answers with its own JSON error
             return Core::ERROR_UNAVAILABLE;
         }
 
@@ -260,7 +260,6 @@ public:
         if (nullptr == params)
         {
             LOGERR("SystemDelegate: failed to create device-info parameter iterator");
-            make = "unknown";
             return Core::ERROR_UNAVAILABLE;
         }
 
@@ -276,8 +275,7 @@ public:
             // Per transform: return_or_else(.result.make, "unknown")
             make = "unknown";
         }
-        // Wrap in quotes to make it a valid JSON string
-        make = "\"" + make + "\"";
+        make = ObjectUtils::StringToJsonString(make);
         return Core::ERROR_NONE;
     }
 
