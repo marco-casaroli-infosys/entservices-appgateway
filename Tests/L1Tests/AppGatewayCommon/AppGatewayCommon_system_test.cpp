@@ -1587,3 +1587,50 @@ TEST_F(SystemDelegateEmitTest, AGC_L1_261_OnSystemFriendlyNameChanged_UsesEventN
 }
 
 } // namespace
+
+class SystemNoInterfaceTest : public ::testing::Test {
+protected:
+    static Core::Sink<AppGatewayCommon>* sPlugin;
+    static NiceMock<ServiceMock>* sService;
+
+    Core::Sink<AppGatewayCommon>& plugin = *sPlugin;
+
+    static void SetUpTestSuite()
+    {
+        sService = new NiceMock<ServiceMock>();
+        sPlugin = new Core::Sink<AppGatewayCommon>();
+
+        ON_CALL(*sService, QueryInterfaceByCallsign(_, _))
+            .WillByDefault(Return(nullptr));
+
+        EXPECT_CALL(*sService, AddRef()).Times(AnyNumber());
+        EXPECT_CALL(*sService, Release()).Times(AnyNumber()).WillRepeatedly(Return(Core::ERROR_NONE));
+
+        const string response = sPlugin->Initialize(sService);
+        ASSERT_TRUE(response.empty());
+    }
+
+    static void TearDownTestSuite()
+    {
+        if (sPlugin && sService) {
+            sPlugin->Deinitialize(sService);
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        delete sPlugin;  sPlugin = nullptr;
+        delete sService; sService = nullptr;
+    }
+};
+
+Core::Sink<AppGatewayCommon>* SystemNoInterfaceTest::sPlugin = nullptr;
+NiceMock<ServiceMock>* SystemNoInterfaceTest::sService = nullptr;
+
+TEST_F(SystemNoInterfaceTest, AGC_L1_262_GetDeviceName_NoSystemServices_LeavesResultEmpty)
+{
+    // A bare fallback name would be forwarded as an invalid JSON payload; empty lets the gateway build its error
+    const auto ctx = MakeContext();
+    string result;
+    const auto rc = plugin.HandleAppGatewayRequest(ctx, "device.name", "{}", result);
+
+    EXPECT_EQ(Core::ERROR_UNAVAILABLE, rc);
+    EXPECT_TRUE(result.empty()) << result;
+}

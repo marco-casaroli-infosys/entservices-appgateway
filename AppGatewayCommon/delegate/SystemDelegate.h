@@ -289,7 +289,7 @@ public:
         auto sysServices = AcquireSystemServices();
         if (!sysServices)
         {
-            name = "Living Room";
+            // Leave the result empty: on failure the gateway answers with its own JSON error
             return Core::ERROR_UNAVAILABLE;
         }
 
