@@ -1586,6 +1586,53 @@ TEST_F(SystemDelegateEmitTest, AGC_L1_261_OnSystemFriendlyNameChanged_UsesEventN
     EXPECT_EQ(0, queries);
 }
 
+TEST_F(SystemDelegateEmitTest, AGC_L1_264_OnSystemFriendlyNameChanged_EmptyName_NoQuery)
+{
+    // An empty name is still the event's value: send "" instead of querying org.rdk.System
+    int queries = 0;
+    systemDispatcher.SetHandler("getFriendlyName", [&queries](const std::string&, const std::string&, std::string& resp) {
+        ++queries;
+        resp = R"({"friendlyName":"Stale Name"})";
+        return Core::ERROR_NONE;
+    });
+
+    MockEmitter* emitter = SubscribeEmitter("Device.onNameChanged");
+
+    EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("Device.onNameChanged"), ::testing::StrEq(R"("")"), _))
+        .Times(::testing::AtLeast(1));
+
+    auto systemDelegate = plugin.mDelegate->getSystemDelegate();
+    ASSERT_NE(systemDelegate, nullptr);
+    Core::JSON::VariantContainer params;
+    params[_T("friendlyName")] = "";
+    systemDelegate->OnSystemFriendlyNameChanged(params);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    EXPECT_EQ(0, queries);
+}
+
+TEST_F(SystemDelegateEmitTest, AGC_L1_265_OnSystemFriendlyNameChanged_NoName_Skipped)
+{
+    int queries = 0;
+    systemDispatcher.SetHandler("getFriendlyName", [&queries](const std::string&, const std::string&, std::string& resp) {
+        ++queries;
+        resp = R"({"friendlyName":"Stale Name"})";
+        return Core::ERROR_NONE;
+    });
+
+    MockEmitter* emitter = SubscribeEmitter("Device.onNameChanged");
+
+    EXPECT_CALL(*emitter, Emit(::testing::HasSubstr("Device.onNameChanged"), _, _)).Times(0);
+
+    auto systemDelegate = plugin.mDelegate->getSystemDelegate();
+    ASSERT_NE(systemDelegate, nullptr);
+    Core::JSON::VariantContainer params;
+    systemDelegate->OnSystemFriendlyNameChanged(params);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    EXPECT_EQ(0, queries);
+}
+
 } // namespace
 
 class SystemNoInterfaceTest : public ::testing::Test {

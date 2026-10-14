@@ -2228,17 +2228,14 @@ private:
         LOGINFO("[AppGatewayCommon|System.onFriendlyNameChanged] Incoming alias=%s.%s, invoking handlers...",
                 SYSTEM_CALLSIGN, "onFriendlyNameChanged");
         // Use the name the event carries, as the time zone and territory handlers do: querying
-        // org.rdk.System again from inside its own notification can block. Re-query only if the
-        // event has no name.
+        // org.rdk.System again from inside its own notification can block. An event without
+        // the name is skipped.
         bool nameEmitted = false;
-        const std::string friendlyName = params.HasLabel(_T("friendlyName")) ? params[_T("friendlyName")].String() : std::string();
-        if (!friendlyName.empty()) {
-            const std::string payload = ObjectUtils::StringToJsonString(friendlyName);
+        if (params.HasLabel(_T("friendlyName"))) {
+            const std::string payload = ObjectUtils::StringToJsonString(params[_T("friendlyName")].String());
             Dispatch(EVENT_ON_NAME_CHANGED, payload);
             Dispatch(EVENT_ON_DEVICE_NAME_CHANGED, payload);
             nameEmitted = true;
-        } else {
-            nameEmitted = EmitOnNameChanged();
         }
         LOGINFO("[AppGatewayCommon|System.onFriendlyNameChanged] Handler responses: onNameChanged=%s",
                 nameEmitted ? "emitted" : "skipped");
